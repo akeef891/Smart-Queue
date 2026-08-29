@@ -1,0 +1,209 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum SubscriptionPlan {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum WorkspaceStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum BusinessType {
+  CLINIC
+  HOSPITAL
+  SALON
+  RESTAURANT
+  BANK
+  GOVERNMENT
+  DIAGNOSTIC_CENTER
+  TUITION_CENTER
+  OTHER
+}
+
+enum BusinessStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum QueueStatus {
+  DRAFT
+  OPEN
+  ACTIVE
+  PAUSED
+  CLOSED
+  ARCHIVED
+  INACTIVE
+}
+
+enum QueueEntryStatus {
+  WAITING
+  CALLED
+  SERVING
+  COMPLETED
+  SKIPPED
+  CANCELLED
+  NO_SHOW
+}
+
+// ============================================================
+// USER  (global identity — Clerk owns auth, no passwords here)
+// ============================================================
+
+model User {
+  id            String   @id @default(cuid())
+  clerkId       String   @unique
+  email         String   @unique
+  displayName   String
+  avatarUrl     String?
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ownedWorkspaces Workspace[] @relation("WorkspaceOwner")
+  createdQueues   Queue[]     @relation("QueueCreatedBy")
+
+  @@index([clerkId])
+  @@map("users")
+}
+
+// ============================================================
+// WORKSPACE (tenant)
+// ============================================================
+
+model Workspace {
+  id                String            @id @default(cuid())
+  name              String
+  slug              String            @unique
+  ownerId           String
+  subscriptionPlan  SubscriptionPlan  @default(FREE)
+  status            WorkspaceStatus   @default(PENDING)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  owner        User          @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  businesses   Business[]
+  queues       Queue[]
+  queueEntries QueueEntry[]
+
+  @@index([ownerId])
+  @@index([slug])
+  @@map("workspaces")
+}
+
+// ============================================================
+// BUSINESS
+// ============================================================
+
+model Business {
+  id           String         @id @default(cuid())
+  workspaceId  String
+  name         String
+  slug         String
+  description  String?
+  type         BusinessType   @default(OTHER)
+  phone        String?
+  address      String?
+  logoUrl      String?
+  openingTime  DateTime?      @db.Time()
+  closingTime  DateTime?      @db.Time()
+  timezone     String         @default("UTC")
+  status       BusinessStatus @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  queues    Queue[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, name])
+  @@map("businesses")
+}
+
+// ============================================================
+// QUEUE
+// ============================================================
+
+model Queue {
+  id                 String      @id @default(cuid())
+  workspaceId        String
+  businessId         String
+  name               String
+  slug               String
+  description        String?
+  status             QueueStatus @default(ACTIVE)
+  averageServiceTime Int         @default(10) // minutes
+  maxCapacity        Int?
+  lastIssuedToken    Int         @default(0)
+  totalServed        Int         @default(0)
+  createdById        String
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  business     Business     @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  createdBy    User         @relation("QueueCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  queueEntries QueueEntry[]
+
+  @@unique([businessId, slug])
+  @@index([workspaceId])
+  @@index([businessId])
+  @@index([businessId, status])
+  @@index([workspaceId, status])
+  @@map("queues")
+}
+
+// ============================================================
+// QUEUE ENTRY (guest customer — no account required)
+// ============================================================
+
+model QueueEntry {
+  id                String           @id @default(cuid())
+  workspaceId       String
+  queueId           String
+  customerName      String
+  customerPhone     String?
+  customerEmail     String?
+  tokenNumber       Int
+  position           Int
+  status            QueueEntryStatus @default(WAITING)
+  estimatedWaitTime Int?             // minutes
+  trackingToken     String           @unique @default(cuid())
+  joinedAt          DateTime         @default(now())
+  calledAt          DateTime?
+  servingAt         DateTime?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  queue     Queue     @relation(fields: [queueId], references: [id], onDelete: Cascade)
+
+  @@unique([queueId, tokenNumber])
+  @@index([workspaceId])
+  @@index([queueId])
+  @@index([queueId, status])
+  @@index([queueId, position])
+  @@index([trackingToken])
+  @@map("queue_entries")
+}
