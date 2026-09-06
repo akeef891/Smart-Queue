@@ -7,6 +7,7 @@ import { getAuthorizedQueueForUser } from "@/lib/tenant";
 import { customerJoinSchema } from "@/lib/validations";
 import { canTransitionEntry, queueAcceptsJoins } from "@/lib/queue-state";
 import { formatTicketNumber } from "@/lib/ticket";
+import { notifyQueueChanged } from "@/lib/realtime-notify";
 import { revalidatePath } from "next/cache";
 import type { QueueEntry, QueueEntryStatus } from "@/generated/prisma";
 
@@ -135,6 +136,7 @@ export async function joinQueue(input: unknown) {
     });
 
     revalidateTicketPaths(queue.businessId, entry.queueId, entry.trackingToken);
+    notifyQueueChanged(entry.queueId);
 
     return {
       ticket: {
@@ -197,6 +199,7 @@ export async function callNextTicket(input: unknown) {
     });
 
     revalidateTicketPaths(business.id, queue.id, result.trackingToken);
+    notifyQueueChanged(queue.id);
     return { ticketId: result.id };
   } catch (err) {
     return mapError(err, "callNextTicket");
@@ -253,6 +256,7 @@ async function transitionTicket(opts: {
   });
 
   revalidateTicketPaths(business.id, queue.id, result.trackingToken);
+  notifyQueueChanged(queue.id);
   return { ok: true as const };
 }
 
@@ -329,6 +333,65 @@ export async function cancelTicket(input: unknown) {
   }
 }
 
+const CUSTOMER_LEAVE_FROM: QueueEntryStatus[] = ["WAITING", "CALLED"];
+
+/** Public: customer leaves using the unguessable trackingToken. Not a staff action. */
+export async function leaveQueue(input: unknown) {
+  try {
+    const raw = input as {
+      businessId?: unknown;
+      queueId?: unknown;
+      trackingToken?: unknown;
+    };
+    if (
+      typeof raw?.businessId !== "string" ||
+      typeof raw?.queueId !== "string" ||
+      typeof raw?.trackingToken !== "string"
+    ) {
+      return { error: "This ticket could not be cancelled." };
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      await lockQueue(tx, raw.queueId as string);
+
+      const entry = await tx.queueEntry.findFirst({
+        where: {
+          trackingToken: raw.trackingToken as string,
+          queueId: raw.queueId as string,
+          queue: { businessId: raw.businessId as string },
+        },
+      });
+
+      if (!entry) {
+        throw new JoinError("This ticket could not be found.");
+      }
+      if (
+        !CUSTOMER_LEAVE_FROM.includes(entry.status) ||
+        !canTransitionEntry(entry.status, "CANCELLED")
+      ) {
+        throw new JoinError("You can no longer leave this queue.");
+      }
+
+      const updated = await tx.queueEntry.updateMany({
+        where: { id: entry.id, status: entry.status },
+        data: { status: "CANCELLED", cancelledAt: new Date() },
+      });
+
+      if (updated.count !== 1) {
+        throw new JoinError("This ticket was already updated. Refresh and try again.");
+      }
+
+      return entry;
+    });
+
+    revalidateTicketPaths(raw.businessId as string, result.queueId, result.trackingToken);
+    notifyQueueChanged(result.queueId);
+    return { ok: true as const };
+  } catch (err) {
+    return mapError(err, "leaveQueue");
+  }
+}
+
 export async function getTicketPosition(entry: Pick<QueueEntry, "queueId" | "tokenNumber" | "status">) {
   if (entry.status !== "WAITING") {
     return { peopleAhead: 0, position: 0 };
@@ -343,4 +406,154 @@ export async function getTicketPosition(entry: Pick<QueueEntry, "queueId" | "tok
   });
 
   return { peopleAhead, position: peopleAhead + 1 };
+}
+
+export type StaffTicketRow = {
+  id: string;
+  customerName: string;
+  tokenLabel: string;
+  status: string;
+};
+
+export type StaffQueueSnapshot = {
+  currentlyServing: StaffTicketRow | null;
+  currentlyCalled: StaffTicketRow | null;
+  waiting: StaffTicketRow[];
+  recentlyCompleted: StaffTicketRow[];
+};
+
+function toStaffRow(
+  slug: string,
+  entry: { id: string; customerName: string; tokenNumber: number; status: string }
+): StaffTicketRow {
+  return {
+    id: entry.id,
+    customerName: entry.customerName,
+    tokenLabel: formatTicketNumber(slug, entry.tokenNumber),
+    status: entry.status,
+  };
+}
+
+export async function getStaffQueueSnapshot(businessId: string, queueId: string) {
+  try {
+    const user = await getCurrentUser();
+    const { queue } = await getAuthorizedQueueForUser(user, queueId, businessId);
+
+    const [serving, called, waiting, recentlyCompleted] = await Promise.all([
+      prisma.queueEntry.findFirst({
+        where: { queueId: queue.id, status: "SERVING" },
+        orderBy: { tokenNumber: "asc" },
+      }),
+      prisma.queueEntry.findFirst({
+        where: { queueId: queue.id, status: "CALLED" },
+        orderBy: { tokenNumber: "asc" },
+      }),
+      prisma.queueEntry.findMany({
+        where: { queueId: queue.id, status: "WAITING" },
+        orderBy: { tokenNumber: "asc" },
+      }),
+      prisma.queueEntry.findMany({
+        where: { queueId: queue.id, status: "COMPLETED" },
+        orderBy: { completedAt: "desc" },
+        take: 5,
+      }),
+    ]);
+
+    return {
+      snapshot: {
+        currentlyServing: serving ? toStaffRow(queue.slug, serving) : null,
+        currentlyCalled: called ? toStaffRow(queue.slug, called) : null,
+        waiting: waiting.map((e) => toStaffRow(queue.slug, e)),
+        recentlyCompleted: recentlyCompleted.map((e) => toStaffRow(queue.slug, e)),
+      } satisfies StaffQueueSnapshot,
+    };
+  } catch (err) {
+    return mapError(err, "getStaffQueueSnapshot");
+  }
+}
+
+export type PublicTicketSnapshot = {
+  businessName: string;
+  queueName: string;
+  label: string;
+  status: string;
+  peopleAhead: number;
+  position: number;
+  currentlyServingLabel: string | null;
+  currentlyCalledLabel: string | null;
+};
+
+export async function getPublicTicketSnapshot(
+  businessId: string,
+  queueId: string,
+  trackingToken: string
+) {
+  try {
+    const entry = await prisma.queueEntry.findFirst({
+      where: {
+        trackingToken,
+        queueId,
+        queue: { businessId },
+      },
+      select: {
+        id: true,
+        status: true,
+        tokenNumber: true,
+        queueId: true,
+        queue: {
+          select: {
+            slug: true,
+            name: true,
+            business: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    if (!entry) {
+      return { error: "This ticket could not be found." };
+    }
+
+    const { peopleAhead, position } = await getTicketPosition(entry);
+
+    let currentlyServingLabel: string | null = null;
+    let currentlyCalledLabel: string | null = null;
+
+    if (entry.status === "WAITING") {
+      const [serving, called] = await Promise.all([
+        prisma.queueEntry.findFirst({
+          where: { queueId: entry.queueId, status: "SERVING" },
+          select: { tokenNumber: true },
+          orderBy: { tokenNumber: "asc" },
+        }),
+        prisma.queueEntry.findFirst({
+          where: { queueId: entry.queueId, status: "CALLED" },
+          select: { tokenNumber: true },
+          orderBy: { tokenNumber: "asc" },
+        }),
+      ]);
+
+      currentlyServingLabel = serving
+        ? formatTicketNumber(entry.queue.slug, serving.tokenNumber)
+        : null;
+      currentlyCalledLabel = called
+        ? formatTicketNumber(entry.queue.slug, called.tokenNumber)
+        : null;
+    }
+
+    return {
+      snapshot: {
+        businessName: entry.queue.business.name,
+        queueName: entry.queue.name,
+        label: formatTicketNumber(entry.queue.slug, entry.tokenNumber),
+        status: entry.status,
+        peopleAhead,
+        position,
+        currentlyServingLabel,
+        currentlyCalledLabel,
+      } satisfies PublicTicketSnapshot,
+    };
+  } catch (err) {
+    return mapError(err, "getPublicTicketSnapshot");
+  }
 }

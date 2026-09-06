@@ -3,8 +3,10 @@ import { getAuthorizedQueueForUser } from "@/lib/tenant";
 import { AppHeader } from "@/components/dashboard/app-header";
 import { QueueManagePanel } from "@/components/dashboard/queue-manage-panel";
 import { QueueLivePanel } from "@/components/dashboard/queue-live-panel";
+import { QueueJoinQr } from "@/components/dashboard/queue-join-qr";
 import { prisma } from "@/lib/prisma";
 import { formatTicketNumber } from "@/lib/ticket";
+import { getAppOrigin } from "@/lib/app-origin";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 
@@ -70,7 +72,9 @@ export default async function QueueDetailPage({
       status: entry.status,
     });
 
-    const joinUrl = `/businesses/${business.id}/queues/${queue.id}/join`;
+    const joinPath = `/businesses/${business.id}/queues/${queue.id}/join`;
+    const origin = await getAppOrigin();
+    const joinUrl = origin ? `${origin}${joinPath}` : joinPath;
 
     return (
       <div className="min-h-screen bg-slate-50">
@@ -131,34 +135,23 @@ export default async function QueueDetailPage({
 
           <p className="mt-4 text-sm text-slate-500">
             Customer join link:{" "}
-            <Link href={joinUrl} className="font-medium text-slate-900 underline hover:no-underline">
+            <Link href={joinPath} className="font-medium text-slate-900 underline hover:no-underline">
               Join this queue
             </Link>
           </p>
 
+          <QueueJoinQr joinUrl={joinUrl} />
+
           <QueueLivePanel
             businessId={business.id}
             queueId={queue.id}
-            currentlyServing={serving ? toRow(serving) : null}
-            currentlyCalled={called ? toRow(called) : null}
-            waiting={waiting.map(toRow)}
+            initial={{
+              currentlyServing: serving ? toRow(serving) : null,
+              currentlyCalled: called ? toRow(called) : null,
+              waiting: waiting.map(toRow),
+              recentlyCompleted: recentlyCompleted.map(toRow),
+            }}
           />
-
-          {recentlyCompleted.length > 0 ? (
-            <section className="mt-6 rounded-xl border bg-white p-6">
-              <h3 className="text-base font-semibold">Recently completed</h3>
-              <ul className="mt-3 divide-y text-sm">
-                {recentlyCompleted.map((entry) => (
-                  <li key={entry.id} className="flex justify-between py-2">
-                    <span>
-                      {formatTicketNumber(queue.slug, entry.tokenNumber)} · {entry.customerName}
-                    </span>
-                    <span className="text-slate-500">COMPLETED</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
 
           <QueueManagePanel
             businessId={business.id}
