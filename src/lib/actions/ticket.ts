@@ -413,6 +413,7 @@ export type StaffTicketRow = {
   customerName: string;
   tokenLabel: string;
   status: string;
+  joinedAt: string | null;
 };
 
 export type StaffQueueSnapshot = {
@@ -420,17 +421,25 @@ export type StaffQueueSnapshot = {
   currentlyCalled: StaffTicketRow | null;
   waiting: StaffTicketRow[];
   recentlyCompleted: StaffTicketRow[];
+  totalServed: number;
 };
 
 function toStaffRow(
   slug: string,
-  entry: { id: string; customerName: string; tokenNumber: number; status: string }
+  entry: {
+    id: string;
+    customerName: string;
+    tokenNumber: number;
+    status: string;
+    joinedAt: Date;
+  }
 ): StaffTicketRow {
   return {
     id: entry.id,
     customerName: entry.customerName,
     tokenLabel: formatTicketNumber(slug, entry.tokenNumber),
     status: entry.status,
+    joinedAt: entry.joinedAt.toISOString(),
   };
 }
 
@@ -465,10 +474,91 @@ export async function getStaffQueueSnapshot(businessId: string, queueId: string)
         currentlyCalled: called ? toStaffRow(queue.slug, called) : null,
         waiting: waiting.map((e) => toStaffRow(queue.slug, e)),
         recentlyCompleted: recentlyCompleted.map((e) => toStaffRow(queue.slug, e)),
+        totalServed: queue.totalServed,
       } satisfies StaffQueueSnapshot,
     };
   } catch (err) {
     return mapError(err, "getStaffQueueSnapshot");
+  }
+}
+
+const HISTORY_STATUSES = ["COMPLETED", "CANCELLED", "SKIPPED", "NO_SHOW"] as const;
+const HISTORY_LIMIT = 50;
+
+export type QueueHistoryRow = {
+  id: string;
+  tokenLabel: string;
+  customerName: string;
+  status: string;
+  joinedAt: string;
+  calledAt: string | null;
+  servingAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  updatedAt: string;
+};
+
+function historySortTime(entry: {
+  status: string;
+  completedAt: Date | null;
+  cancelledAt: Date | null;
+  updatedAt: Date;
+}) {
+  if (entry.status === "COMPLETED" && entry.completedAt) {
+    return entry.completedAt.getTime();
+  }
+  if (entry.status === "CANCELLED" && entry.cancelledAt) {
+    return entry.cancelledAt.getTime();
+  }
+  return entry.updatedAt.getTime();
+}
+
+export async function getQueueHistory(businessId: string, queueId: string) {
+  try {
+    const user = await getCurrentUser();
+    const { queue } = await getAuthorizedQueueForUser(user, queueId, businessId);
+
+    const rows = await prisma.queueEntry.findMany({
+      where: {
+        queueId: queue.id,
+        status: { in: [...HISTORY_STATUSES] },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: HISTORY_LIMIT,
+      select: {
+        id: true,
+        customerName: true,
+        tokenNumber: true,
+        status: true,
+        joinedAt: true,
+        calledAt: true,
+        servingAt: true,
+        completedAt: true,
+        cancelledAt: true,
+        updatedAt: true,
+      },
+    });
+
+    const history = [...rows]
+      .sort((a, b) => historySortTime(b) - historySortTime(a))
+      .map(
+        (entry): QueueHistoryRow => ({
+          id: entry.id,
+          tokenLabel: formatTicketNumber(queue.slug, entry.tokenNumber),
+          customerName: entry.customerName,
+          status: entry.status,
+          joinedAt: entry.joinedAt.toISOString(),
+          calledAt: entry.calledAt?.toISOString() ?? null,
+          servingAt: entry.servingAt?.toISOString() ?? null,
+          completedAt: entry.completedAt?.toISOString() ?? null,
+          cancelledAt: entry.cancelledAt?.toISOString() ?? null,
+          updatedAt: entry.updatedAt.toISOString(),
+        })
+      );
+
+    return { history };
+  } catch (err) {
+    return mapError(err, "getQueueHistory");
   }
 }
 

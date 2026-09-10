@@ -7,6 +7,7 @@ import { QueueJoinQr } from "@/components/dashboard/queue-join-qr";
 import { prisma } from "@/lib/prisma";
 import { formatTicketNumber } from "@/lib/ticket";
 import { getAppOrigin } from "@/lib/app-origin";
+import { getQueueHistory } from "@/lib/actions/ticket";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 
@@ -65,33 +66,53 @@ export default async function QueueDetailPage({
       }),
     ]);
 
-    const toRow = (entry: { id: string; customerName: string; tokenNumber: number; status: string }) => ({
+    const toRow = (entry: {
+      id: string;
+      customerName: string;
+      tokenNumber: number;
+      status: string;
+      joinedAt: Date;
+    }) => ({
       id: entry.id,
       customerName: entry.customerName,
       tokenLabel: formatTicketNumber(queue.slug, entry.tokenNumber),
       status: entry.status,
+      joinedAt: entry.joinedAt.toISOString(),
     });
 
     const joinPath = `/businesses/${business.id}/queues/${queue.id}/join`;
     const origin = await getAppOrigin();
     const joinUrl = origin ? `${origin}${joinPath}` : joinPath;
+    const historyResult = await getQueueHistory(business.id, queue.id);
+    const initialHistory = "history" in historyResult ? historyResult.history : [];
+    const initialHistoryError =
+      "error" in historyResult && historyResult.error ? historyResult.error : null;
 
     return (
       <div className="min-h-screen bg-slate-50">
         <AppHeader title={workspace.name} subtitle="Queue" />
 
-        <main className="mx-auto max-w-3xl px-6 py-8">
-          <Link
-            href={`/businesses/${business.id}`}
-            className="text-sm text-slate-500 hover:text-slate-900"
-          >
-            ← Back to {business.name}
-          </Link>
+        <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Link
+              href={`/businesses/${business.id}`}
+              className="text-sm text-slate-500 hover:text-slate-900"
+            >
+              ← Back to {business.name}
+            </Link>
+            <Link
+              href={`/businesses/${business.id}/queues/${queue.id}/analytics`}
+              className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-white"
+            >
+              Analytics
+            </Link>
+          </div>
 
           <section className="mt-4 rounded-xl border bg-white p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-2xl font-semibold">{queue.name}</h2>
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Queue Overview</p>
+                <h2 className="mt-1 text-2xl font-semibold">{queue.name}</h2>
                 {queue.description ? (
                   <p className="mt-2 text-sm text-slate-600">{queue.description}</p>
                 ) : (
@@ -150,7 +171,10 @@ export default async function QueueDetailPage({
               currentlyCalled: called ? toRow(called) : null,
               waiting: waiting.map(toRow),
               recentlyCompleted: recentlyCompleted.map(toRow),
+              totalServed: queue.totalServed,
             }}
+            initialHistory={initialHistory}
+            initialHistoryError={initialHistoryError}
           />
 
           <QueueManagePanel
