@@ -1,4 +1,4 @@
-export type AnalyticsPeriod = "today";
+export type AnalyticsPeriod = "today" | "yesterday" | "last7days" | "last30days";
 
 function getZonedYmd(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -12,8 +12,8 @@ function getZonedYmd(date: Date, timeZone: string) {
   return { year: value("year"), month: value("month"), day: value("day") };
 }
 
-function addCalendarDay(year: number, month: number, day: number) {
-  const next = new Date(Date.UTC(year, month - 1, day + 1));
+function shiftCalendarDays(year: number, month: number, day: number, delta: number) {
+  const next = new Date(Date.UTC(year, month - 1, day + delta));
   return {
     year: next.getUTCFullYear(),
     month: next.getUTCMonth() + 1,
@@ -60,11 +60,22 @@ function zonedLocalToUtc(
   return new Date(utcGuess - offsetAt(first));
 }
 
+export type AnalyticsPeriodResult = {
+  start: Date;
+  end: Date;
+  prevStart: Date;
+  prevEnd: Date;
+  label: string;
+  comparisonLabel: string;
+  timeZone: string;
+  period: AnalyticsPeriod;
+};
+
 export function getAnalyticsPeriodRange(
   timeZone: string,
   period: AnalyticsPeriod = "today",
   now = new Date()
-) {
+): AnalyticsPeriodResult {
   let tz = timeZone.trim() || "UTC";
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: tz }).format(now);
@@ -73,14 +84,93 @@ export function getAnalyticsPeriodRange(
   }
 
   const ymd = getZonedYmd(now, tz);
+
+  if (period === "yesterday") {
+    const yDay = shiftCalendarDays(ymd.year, ymd.month, ymd.day, -1);
+    const start = zonedLocalToUtc(yDay.year, yDay.month, yDay.day, 0, 0, 0, tz);
+    const end = zonedLocalToUtc(ymd.year, ymd.month, ymd.day, 0, 0, 0, tz);
+
+    const prevDay = shiftCalendarDays(ymd.year, ymd.month, ymd.day, -2);
+    const prevStart = zonedLocalToUtc(prevDay.year, prevDay.month, prevDay.day, 0, 0, 0, tz);
+    const prevEnd = start;
+
+    return {
+      start,
+      end,
+      prevStart,
+      prevEnd,
+      label: "Yesterday",
+      comparisonLabel: "Day Before Yesterday",
+      timeZone: tz,
+      period,
+    };
+  }
+
+  if (period === "last7days") {
+    // 7 days ending at the end of today (today + 6 previous days)
+    const nextDay = shiftCalendarDays(ymd.year, ymd.month, ymd.day, 1);
+    const end = zonedLocalToUtc(nextDay.year, nextDay.month, nextDay.day, 0, 0, 0, tz);
+
+    const startDay = shiftCalendarDays(ymd.year, ymd.month, ymd.day, -6);
+    const start = zonedLocalToUtc(startDay.year, startDay.month, startDay.day, 0, 0, 0, tz);
+
+    const prevStartDay = shiftCalendarDays(ymd.year, ymd.month, ymd.day, -13);
+    const prevStart = zonedLocalToUtc(prevStartDay.year, prevStartDay.month, prevStartDay.day, 0, 0, 0, tz);
+    const prevEnd = start;
+
+    return {
+      start,
+      end,
+      prevStart,
+      prevEnd,
+      label: "Last 7 Days",
+      comparisonLabel: "Previous 7 Days",
+      timeZone: tz,
+      period,
+    };
+  }
+
+  if (period === "last30days") {
+    // 30 days ending at the end of today (today + 29 previous days)
+    const nextDay = shiftCalendarDays(ymd.year, ymd.month, ymd.day, 1);
+    const end = zonedLocalToUtc(nextDay.year, nextDay.month, nextDay.day, 0, 0, 0, tz);
+
+    const startDay = shiftCalendarDays(ymd.year, ymd.month, ymd.day, -29);
+    const start = zonedLocalToUtc(startDay.year, startDay.month, startDay.day, 0, 0, 0, tz);
+
+    const prevStartDay = shiftCalendarDays(ymd.year, ymd.month, ymd.day, -59);
+    const prevStart = zonedLocalToUtc(prevStartDay.year, prevStartDay.month, prevStartDay.day, 0, 0, 0, tz);
+    const prevEnd = start;
+
+    return {
+      start,
+      end,
+      prevStart,
+      prevEnd,
+      label: "Last 30 Days",
+      comparisonLabel: "Previous 30 Days",
+      timeZone: tz,
+      period,
+    };
+  }
+
+  // Default: "today"
   const start = zonedLocalToUtc(ymd.year, ymd.month, ymd.day, 0, 0, 0, tz);
-  const next = addCalendarDay(ymd.year, ymd.month, ymd.day);
+  const next = shiftCalendarDays(ymd.year, ymd.month, ymd.day, 1);
   const end = zonedLocalToUtc(next.year, next.month, next.day, 0, 0, 0, tz);
+
+  const prevDay = shiftCalendarDays(ymd.year, ymd.month, ymd.day, -1);
+  const prevStart = zonedLocalToUtc(prevDay.year, prevDay.month, prevDay.day, 0, 0, 0, tz);
+  const prevEnd = start;
 
   return {
     start,
     end,
-    label: period === "today" ? "Today" : period,
+    prevStart,
+    prevEnd,
+    label: "Today",
+    comparisonLabel: "Yesterday",
     timeZone: tz,
+    period: "today",
   };
 }

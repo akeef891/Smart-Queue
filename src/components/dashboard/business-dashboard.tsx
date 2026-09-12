@@ -98,6 +98,12 @@ function BusinessQuickActions({
       <h3 className="text-base font-semibold">Quick actions</h3>
       <div className="mt-4 flex flex-wrap gap-2">
         <CreateQueueDialog businessId={businessId} label="Create Queue" />
+        <Link
+          href={`/businesses/${businessId}/insights`}
+          className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-slate-50"
+        >
+          Business Insights
+        </Link>
         <a
           href="#queues"
           className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-slate-50"
@@ -161,6 +167,12 @@ export function BusinessDashboard({
               {snapshot.businessStatus}
             </span>
             <LiveStatus status={liveStatus} />
+            <Link
+              href={`/businesses/${businessId}/insights`}
+              className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              Insights
+            </Link>
             <CreateQueueDialog businessId={businessId} label="Create Queue" />
           </div>
         </div>
