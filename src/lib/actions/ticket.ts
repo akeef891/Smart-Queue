@@ -40,18 +40,23 @@ function mapError(err: unknown, action: string): { error: string } {
   ) {
     return { error: "We're having trouble connecting to the database. Please try again in a moment." };
   }
-  console.error(`${action} failed:`, err instanceof Error ? err.name : "unknown");
+  console.error(`${action} failed:`, err);
   return { error: "Something went wrong. Please try again." };
 }
 
 function revalidateTicketPaths(businessId: string, queueId: string, trackingToken?: string) {
-  revalidatePath("/dashboard");
-  revalidatePath(`/businesses/${businessId}`);
-  revalidatePath(`/businesses/${businessId}/queues/${queueId}`);
-  revalidatePath(`/businesses/${businessId}/queues/${queueId}/join`);
-  if (trackingToken) {
-    revalidatePath(`/businesses/${businessId}/queues/${queueId}/ticket/${trackingToken}`);
-    revalidatePath(`/track/${trackingToken}`);
+  try {
+    revalidatePath("/dashboard");
+    revalidatePath(`/businesses/${businessId}`);
+    revalidatePath(`/businesses/${businessId}/queues/${queueId}`);
+    revalidatePath(`/businesses/${businessId}/queues/${queueId}/display`);
+    revalidatePath(`/businesses/${businessId}/queues/${queueId}/join`);
+    if (trackingToken) {
+      revalidatePath(`/businesses/${businessId}/queues/${queueId}/ticket/${trackingToken}`);
+      revalidatePath(`/track/${trackingToken}`);
+    }
+  } catch {
+    // Silently ignore if invoked outside Next.js request context
   }
 }
 
@@ -647,3 +652,93 @@ export async function getPublicTicketSnapshot(
     return mapError(err, "getPublicTicketSnapshot");
   }
 }
+
+export type PublicQueueDisplaySnapshot = {
+  businessId: string;
+  businessName: string;
+  queueId: string;
+  queueName: string;
+  queueSlug: string;
+  queueStatus: string;
+  averageServiceTime: number;
+  currentlyCalled: string | null;
+  currentlyServing: string | null;
+  nextTickets: string[];
+  totalWaiting: number;
+  updatedAt: string;
+};
+
+export async function getPublicQueueDisplaySnapshot(
+  businessId: string,
+  queueId: string
+) {
+  try {
+    const queue = await prisma.queue.findFirst({
+      where: {
+        id: queueId,
+        businessId,
+        business: { status: { not: "ARCHIVED" } },
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        status: true,
+        averageServiceTime: true,
+        businessId: true,
+        business: { select: { id: true, name: true, status: true } },
+      },
+    });
+
+    if (!queue) {
+      return { error: "Queue could not be found." };
+    }
+
+    const [called, serving, waiting] = await Promise.all([
+      prisma.queueEntry.findFirst({
+        where: { queueId: queue.id, status: "CALLED" },
+        select: { tokenNumber: true },
+        orderBy: { calledAt: "desc" },
+      }),
+      prisma.queueEntry.findFirst({
+        where: { queueId: queue.id, status: "SERVING" },
+        select: { tokenNumber: true },
+        orderBy: { servingAt: "desc" },
+      }),
+      prisma.queueEntry.findMany({
+        where: { queueId: queue.id, status: "WAITING" },
+        select: { tokenNumber: true },
+        orderBy: { tokenNumber: "asc" },
+        take: 6,
+      }),
+    ]);
+
+    const totalWaiting = await prisma.queueEntry.count({
+      where: { queueId: queue.id, status: "WAITING" },
+    });
+
+    return {
+      snapshot: {
+        businessId: queue.business.id,
+        businessName: queue.business.name,
+        queueId: queue.id,
+        queueName: queue.name,
+        queueSlug: queue.slug,
+        queueStatus: queue.status,
+        averageServiceTime: queue.averageServiceTime,
+        currentlyCalled: called
+          ? formatTicketNumber(queue.slug, called.tokenNumber)
+          : null,
+        currentlyServing: serving
+          ? formatTicketNumber(queue.slug, serving.tokenNumber)
+          : null,
+        nextTickets: waiting.map((w) => formatTicketNumber(queue.slug, w.tokenNumber)),
+        totalWaiting,
+        updatedAt: new Date().toISOString(),
+      } satisfies PublicQueueDisplaySnapshot,
+    };
+  } catch (err) {
+    return mapError(err, "getPublicQueueDisplaySnapshot");
+  }
+}
+

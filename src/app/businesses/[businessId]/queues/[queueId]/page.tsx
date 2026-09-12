@@ -100,12 +100,22 @@ export default async function QueueDetailPage({
             >
               ← Back to {business.name}
             </Link>
-            <Link
-              href={`/businesses/${business.id}/queues/${queue.id}/analytics`}
-              className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-white"
-            >
-              Analytics
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/businesses/${business.id}/queues/${queue.id}/display`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                TV Display ↗
+              </Link>
+              <Link
+                href={`/businesses/${business.id}/queues/${queue.id}/analytics`}
+                className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-white"
+              >
+                Analytics
+              </Link>
+            </div>
           </div>
 
           <section className="mt-4 rounded-xl border bg-white p-6">
