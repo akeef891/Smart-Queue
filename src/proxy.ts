@@ -10,6 +10,7 @@ const isPublicRoute = createRouteMatcher([
   "/track(.*)",
   "/businesses(.*)/queues(.*)/join(.*)",
   "/businesses(.*)/queues(.*)/ticket(.*)",
+  "/businesses(.*)/queues(.*)/display(.*)",
   "/api/join(.*)",
   "/api/webhooks(.*)",
 ]);

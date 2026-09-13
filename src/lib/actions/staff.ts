@@ -231,7 +231,7 @@ export async function updateStaffMember(input: unknown): Promise<{
       return { error: parsed.error.issues[0]?.message ?? "Invalid update parameters." };
     }
 
-    const { business } = await getAuthorizedBusinessForUser(
+    const { business, workspace } = await getAuthorizedBusinessForUser(
       user,
       parsed.data.businessId,
       "OWNER"
@@ -243,6 +243,18 @@ export async function updateStaffMember(input: unknown): Promise<{
 
     if (!member) {
       return { error: "Staff member not found." };
+    }
+
+    // Protect owner from demotion or role modification
+    const ownerUser = await prisma.user.findUnique({
+      where: { id: workspace.ownerId },
+    });
+    if (
+      member.userId === workspace.ownerId ||
+      member.userId === user.id ||
+      (ownerUser && member.email.toLowerCase() === ownerUser.email.toLowerCase())
+    ) {
+      return { error: "The business owner cannot be demoted or have their role modified." };
     }
 
     const queueIds = parsed.data.queueIds ?? [];
@@ -316,7 +328,14 @@ export async function removeStaffMember(input: unknown): Promise<{
     }
 
     // Protect owner: Cannot remove self or workspace owner
-    if (member.userId === workspace.ownerId || member.userId === user.id) {
+    const ownerUser = await prisma.user.findUnique({
+      where: { id: workspace.ownerId },
+    });
+    if (
+      member.userId === workspace.ownerId ||
+      member.userId === user.id ||
+      (ownerUser && member.email.toLowerCase() === ownerUser.email.toLowerCase())
+    ) {
       return { error: "The business owner cannot be removed." };
     }
 

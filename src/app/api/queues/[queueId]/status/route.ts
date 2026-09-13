@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { getAuthorizedQueue } from "@/lib/tenant";
+import { getAuthorizedQueueForUser } from "@/lib/tenant";
 import { queueStatusUpdateSchema } from "@/lib/validations";
 import { canTransitionQueue } from "@/lib/queue-state";
 import { handleApiError } from "@/app/api/businesses/route";
@@ -19,7 +19,7 @@ export async function PATCH(
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { queue } = await getAuthorizedQueue(user, parsed.data.workspaceId, queueId);
+    const { queue } = await getAuthorizedQueueForUser(user, queueId, undefined, "MANAGE");
 
     if (!canTransitionQueue(queue.status, parsed.data.status)) {
       return NextResponse.json(

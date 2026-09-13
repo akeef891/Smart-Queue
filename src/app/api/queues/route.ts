@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { getAuthorizedWorkspace, getAuthorizedBusiness } from "@/lib/tenant";
+import { getAuthorizedWorkspace, getAuthorizedBusinessForUser } from "@/lib/tenant";
 import { queueCreateSchema } from "@/lib/validations";
 import { handleApiError } from "@/app/api/businesses/route";
 import { slugify } from "@/lib/slug";
@@ -15,13 +15,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
 
-    // Verify both workspace ownership AND that the business actually
-    // belongs to that workspace before creating the queue.
-    const { business } = await getAuthorizedBusiness(
+    // Verify user is an OWNER of this business before allowing queue creation
+    const { business, workspace } = await getAuthorizedBusinessForUser(
       user,
-      parsed.data.workspaceId,
-      parsed.data.businessId
+      parsed.data.businessId,
+      "OWNER"
     );
+
+    if (parsed.data.workspaceId && workspace.id !== parsed.data.workspaceId) {
+      return NextResponse.json({ error: "Workspace mismatch" }, { status: 403 });
+    }
 
     const base = slugify(parsed.data.name, "queue");
     let slug = base;

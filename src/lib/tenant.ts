@@ -100,7 +100,10 @@ export async function listAccessibleBusinessesForUser(user: User) {
         {
           members: {
             some: {
-              OR: [{ userId: user.id }, { email: userEmail }],
+              OR: [
+                { userId: user.id },
+                { email: { equals: userEmail, mode: "insensitive" } },
+              ],
             },
           },
         },
@@ -113,9 +116,12 @@ export async function listAccessibleBusinessesForUser(user: User) {
       workspace: { select: { id: true, name: true, ownerId: true } },
       members: {
         where: {
-          OR: [{ userId: user.id }, { email: userEmail }],
+          OR: [
+            { userId: user.id },
+            { email: { equals: userEmail, mode: "insensitive" } },
+          ],
         },
-        select: { id: true, role: true, status: true },
+        select: { id: true, role: true, status: true, userId: true },
       },
     },
   });
@@ -154,7 +160,10 @@ export async function getAuthorizedBusinessForUser(
       workspace: true,
       members: {
         where: {
-          OR: [{ userId: user.id }, { email: userEmail }],
+          OR: [
+            { userId: user.id },
+            { email: { equals: userEmail, mode: "insensitive" } },
+          ],
         },
         include: { queueAssignments: true },
       },
@@ -178,12 +187,19 @@ export async function getAuthorizedBusinessForUser(
       throw new AuthError("UNAUTHORIZED", "You do not have access to this business.");
     }
 
+    // If the membership record is already bound to another user ID, reject
+    if (member.userId && member.userId !== user.id) {
+      throw new AuthError("UNAUTHORIZED", "Membership is bound to a different user.");
+    }
+
     // Auto-link userId and activate if this user accepted an invite via matching email
     if (!member.userId || member.status !== "ACTIVE") {
       await prisma.businessMember.update({
         where: { id: member.id },
         data: { userId: user.id, status: "ACTIVE" },
       });
+      member.userId = user.id;
+      member.status = "ACTIVE";
     }
 
     role = member.role;
