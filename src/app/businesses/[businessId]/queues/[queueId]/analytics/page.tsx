@@ -18,8 +18,9 @@ export default async function QueueAnalyticsPage({
     let queue;
     let business;
     let workspace;
+    let role;
     try {
-      ({ queue, business, workspace } = await getAuthorizedQueueForUser(
+      ({ queue, business, workspace, role } = await getAuthorizedQueueForUser(
         user,
         queueId,
         businessId
@@ -28,6 +29,10 @@ export default async function QueueAnalyticsPage({
       if (err instanceof AuthError && err.code === "UNAUTHENTICATED") {
         throw err;
       }
+      notFound();
+    }
+
+    if (role === "STAFF") {
       notFound();
     }
 

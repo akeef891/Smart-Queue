@@ -23,9 +23,11 @@ function BusinessMetricCard({ label, value }: { label: string; value: number }) 
 function BusinessQueueCard({
   businessId,
   queue,
+  userRole,
 }: {
   businessId: string;
   queue: BusinessQueueSummary;
+  userRole: BusinessDashboardSnapshot["userRole"];
 }) {
   const operationsHref = `/businesses/${businessId}/queues/${queue.id}`;
   return (
@@ -69,12 +71,14 @@ function BusinessQueueCard({
         >
           Open Queue
         </Link>
-        <Link
-          href={`${operationsHref}/analytics`}
-          className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-50"
-        >
-          Analytics
-        </Link>
+        {userRole !== "STAFF" ? (
+          <Link
+            href={`${operationsHref}/analytics`}
+            className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-50"
+          >
+            Analytics
+          </Link>
+        ) : null}
         <Link
           href={`${operationsHref}/join`}
           className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-50"
@@ -89,28 +93,42 @@ function BusinessQueueCard({
 function BusinessQuickActions({
   businessId,
   queues,
+  userRole,
 }: {
   businessId: string;
   queues: BusinessQueueSummary[];
+  userRole: BusinessDashboardSnapshot["userRole"];
 }) {
   return (
     <section className="rounded-xl border bg-white p-6">
       <h3 className="text-base font-semibold">Quick actions</h3>
       <div className="mt-4 flex flex-wrap gap-2">
-        <CreateQueueDialog businessId={businessId} label="Create Queue" />
-        <Link
-          href={`/businesses/${businessId}/insights`}
-          className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-slate-50"
-        >
-          Business Insights
-        </Link>
+        {userRole === "OWNER" ? (
+          <CreateQueueDialog businessId={businessId} label="Create Queue" />
+        ) : null}
+        {userRole !== "STAFF" ? (
+          <Link
+            href={`/businesses/${businessId}/insights`}
+            className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-slate-50"
+          >
+            Business Insights
+          </Link>
+        ) : null}
+        {userRole === "OWNER" ? (
+          <Link
+            href={`/businesses/${businessId}/staff`}
+            className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-slate-50"
+          >
+            Team & Staff
+          </Link>
+        ) : null}
         <a
           href="#queues"
           className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-slate-50"
         >
-          Manage Queues
+          {userRole === "STAFF" ? "Assigned Queues" : "Manage Queues"}
         </a>
-        {queues.length === 1 ? (
+        {userRole !== "STAFF" && queues.length === 1 ? (
           <Link
             href={`/businesses/${businessId}/queues/${queues[0].id}/analytics`}
             className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-slate-50"
@@ -160,20 +178,47 @@ export function BusinessDashboard({
               {snapshot.greeting}, {snapshot.businessName}
             </p>
             <h2 className="mt-1 text-2xl font-semibold">{snapshot.businessName}</h2>
-            <p className="mt-2 text-sm text-slate-600">Here&apos;s what&apos;s happening across your queues.</p>
+            <p className="mt-2 text-sm text-slate-600">
+              {snapshot.userRole === "STAFF"
+                ? "Assigned live queues operational dashboard."
+                : "Here's what's happening across your queues."}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <span
+              className={`rounded-full border px-3 py-1 text-xs font-semibold tracking-wide ${
+                snapshot.userRole === "OWNER"
+                  ? "border-purple-200 bg-purple-50 text-purple-700"
+                  : snapshot.userRole === "MANAGER"
+                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                  : "border-blue-200 bg-blue-50 text-blue-700"
+              }`}
+            >
+              {snapshot.userRole}
+            </span>
             <span className="rounded-full border px-3 py-1 text-xs font-medium tracking-wide">
               {snapshot.businessStatus}
             </span>
             <LiveStatus status={liveStatus} />
-            <Link
-              href={`/businesses/${businessId}/insights`}
-              className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              Insights
-            </Link>
-            <CreateQueueDialog businessId={businessId} label="Create Queue" />
+            {snapshot.userRole === "OWNER" ? (
+              <Link
+                href={`/businesses/${businessId}/staff`}
+                className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Team & Staff
+              </Link>
+            ) : null}
+            {snapshot.userRole !== "STAFF" ? (
+              <Link
+                href={`/businesses/${businessId}/insights`}
+                className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Insights
+              </Link>
+            ) : null}
+            {snapshot.userRole === "OWNER" ? (
+              <CreateQueueDialog businessId={businessId} label="Create Queue" />
+            ) : null}
           </div>
         </div>
       </section>
@@ -196,24 +241,49 @@ export function BusinessDashboard({
         </div>
       </section>
 
-      <BusinessQuickActions businessId={businessId} queues={snapshot.queues} />
+      <BusinessQuickActions businessId={businessId} queues={snapshot.queues} userRole={snapshot.userRole} />
 
       <section id="queues">
-        <h3 className="text-base font-semibold">Your Queues</h3>
+        <h3 className="text-base font-semibold">
+          {snapshot.userRole === "STAFF" ? "Your Assigned Queues" : "Your Queues"}
+        </h3>
         {snapshot.queues.length === 0 ? (
           <div className="mt-3 rounded-xl border bg-white p-8 text-center">
-            <p className="font-medium">No queues yet</p>
-            <p className="mt-1 text-sm text-slate-500">
-              Create your first queue to start managing customer waiting lines.
-            </p>
-            <div className="mt-4 flex justify-center">
-              <CreateQueueDialog businessId={businessId} label="Create Queue" />
-            </div>
+            {snapshot.userRole === "OWNER" ? (
+              <>
+                <p className="font-medium">No queues yet</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Create your first queue to start managing customer waiting lines.
+                </p>
+                <div className="mt-4 flex justify-center">
+                  <CreateQueueDialog businessId={businessId} label="Create Queue" />
+                </div>
+              </>
+            ) : snapshot.userRole === "MANAGER" ? (
+              <>
+                <p className="font-medium">No queues yet</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  No queues have been created for this business yet. Please contact the business owner to create queues.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-medium">No assigned queues</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  You do not have any queues assigned to your account. Contact your manager or business owner to assign queues to you.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
             {snapshot.queues.map((queue) => (
-              <BusinessQueueCard key={queue.id} businessId={businessId} queue={queue} />
+              <BusinessQueueCard
+                key={queue.id}
+                businessId={businessId}
+                queue={queue}
+                userRole={snapshot.userRole}
+              />
             ))}
           </div>
         )}

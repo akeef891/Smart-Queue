@@ -1,19 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { AuthError } from "@/lib/auth";
-import type { User, Workspace, Business, Queue } from "@/generated/prisma";
+import type { User, Workspace, Business, Queue, BusinessRole } from "@/generated/prisma";
 
-/**
- * ALL workspace-scoped server code must resolve authorization through this
- * file. Never call `prisma.<model>.findUnique({ where: { id } })` on a
- * tenant-owned model using a client-supplied id alone — always pair it with
- * an authorized workspaceId, resolved here from the session, never from the
- * request body/params.
- */
+export type { BusinessRole };
 
-// Roles are intentionally simple for v1: owner (workspace.ownerId) or staff
-// (any user granted membership). Membership table can be added later without
-// changing these function signatures.
 export type WorkspaceRole = "OWNER" | "STAFF";
+
+export function hasSufficientRole(
+  actualRole: BusinessRole,
+  requiredRole: BusinessRole
+): boolean {
+  if (actualRole === "OWNER") return true;
+  if (actualRole === "MANAGER") return requiredRole === "MANAGER" || requiredRole === "STAFF";
+  if (actualRole === "STAFF") return requiredRole === "STAFF";
+  return false;
+}
 
 export async function getAuthorizedWorkspace(
   user: User,
@@ -31,7 +32,6 @@ export async function getAuthorizedWorkspace(
     return { workspace, role: "OWNER" };
   }
 
-  // Placeholder for future WorkspaceMember table lookup.
   throw new AuthError("UNAUTHORIZED", "You do not have access to this workspace.");
 }
 
@@ -88,39 +88,134 @@ export async function getCurrentWorkspace(user: User): Promise<Workspace | null>
 }
 
 /**
- * Authorize a business by id using the session user. The business's
- * workspace is loaded from the database — never from the client.
+ * All businesses the user can access either as a workspace owner (OWNER)
+ * or as an invited/active team member (MANAGER or STAFF).
  */
-export async function getAuthorizedBusinessForUser(
-  user: User,
-  businessId: string
-): Promise<{ workspace: Workspace; business: Business }> {
-  const business = await prisma.business.findFirst({
-    where: { id: businessId },
-    include: { workspace: true },
+export async function listAccessibleBusinessesForUser(user: User) {
+  const userEmail = user.email.toLowerCase();
+  const businesses = await prisma.business.findMany({
+    where: {
+      OR: [
+        { workspace: { ownerId: user.id, status: { not: "DELETED" } } },
+        {
+          members: {
+            some: {
+              OR: [{ userId: user.id }, { email: userEmail }],
+            },
+          },
+        },
+      ],
+      status: { not: "ARCHIVED" },
+    },
+    orderBy: { createdAt: "desc" },
+    include: {
+      _count: { select: { queues: true } },
+      workspace: { select: { id: true, name: true, ownerId: true } },
+      members: {
+        where: {
+          OR: [{ userId: user.id }, { email: userEmail }],
+        },
+        select: { id: true, role: true, status: true },
+      },
+    },
   });
 
-  if (!business) {
-    throw new AuthError("UNAUTHORIZED", "Business not found.");
-  }
-
-  if (business.workspace.ownerId !== user.id || business.workspace.status === "DELETED") {
-    throw new AuthError("UNAUTHORIZED", "You do not have access to this business.");
-  }
-
-  const { workspace, ...rest } = business;
-  return { workspace, business: rest };
+  return businesses.map((b) => {
+    const isOwner = b.workspace.ownerId === user.id;
+    const member = b.members[0];
+    const role: BusinessRole = isOwner ? "OWNER" : member?.role ?? "STAFF";
+    return {
+      ...b,
+      role,
+    };
+  });
 }
 
 /**
- * Authorize a queue by id. Workspace and business are loaded from the
- * database. Optional businessId is verified against the queue row, never trusted alone.
+ * Authorize a business by id using the session user.
+ * Resolves role (OWNER, MANAGER, STAFF) and enforces minimum role requirements.
+ */
+export async function getAuthorizedBusinessForUser(
+  user: User,
+  businessId: string,
+  minRole: BusinessRole = "STAFF"
+): Promise<{
+  workspace: Workspace;
+  business: Business;
+  role: BusinessRole;
+  memberId?: string;
+  assignedQueueIds: string[];
+}> {
+  const userEmail = user.email.toLowerCase();
+
+  const business = await prisma.business.findFirst({
+    where: { id: businessId },
+    include: {
+      workspace: true,
+      members: {
+        where: {
+          OR: [{ userId: user.id }, { email: userEmail }],
+        },
+        include: { queueAssignments: true },
+      },
+    },
+  });
+
+  if (!business || business.workspace.status === "DELETED") {
+    throw new AuthError("UNAUTHORIZED", "Business not found.");
+  }
+
+  const isWorkspaceOwner = business.workspace.ownerId === user.id;
+  let role: BusinessRole;
+  let memberId: string | undefined;
+  let assignedQueueIds: string[] = [];
+
+  if (isWorkspaceOwner) {
+    role = "OWNER";
+  } else {
+    const member = business.members[0];
+    if (!member) {
+      throw new AuthError("UNAUTHORIZED", "You do not have access to this business.");
+    }
+
+    // Auto-link userId and activate if this user accepted an invite via matching email
+    if (!member.userId || member.status !== "ACTIVE") {
+      await prisma.businessMember.update({
+        where: { id: member.id },
+        data: { userId: user.id, status: "ACTIVE" },
+      });
+    }
+
+    role = member.role;
+    memberId = member.id;
+    assignedQueueIds = member.queueAssignments.map((a) => a.queueId);
+  }
+
+  if (!hasSufficientRole(role, minRole)) {
+    throw new AuthError("UNAUTHORIZED", `This action requires ${minRole} permissions.`);
+  }
+
+  const { workspace, members: _members, ...rest } = business;
+  return { workspace, business: rest, role, memberId, assignedQueueIds };
+}
+
+/**
+ * Authorize a queue by id.
+ * - Ensures business and workspace authorization
+ * - For STAFF: verifies that the queue is in the staff member's assignedQueueIds
+ * - For MANAGE action (updating settings, deleting): enforces OWNER role only
  */
 export async function getAuthorizedQueueForUser(
   user: User,
   queueId: string,
-  businessId?: string
-): Promise<{ workspace: Workspace; business: Business; queue: Queue }> {
+  businessId?: string,
+  action: "OPERATE" | "MANAGE" = "OPERATE"
+): Promise<{
+  workspace: Workspace;
+  business: Business;
+  queue: Queue;
+  role: BusinessRole;
+}> {
   const queue = await prisma.queue.findFirst({
     where: { id: queueId },
     include: {
@@ -132,16 +227,24 @@ export async function getAuthorizedQueueForUser(
     throw new AuthError("UNAUTHORIZED", "Queue not found.");
   }
 
-  if (queue.business.workspace.ownerId !== user.id || queue.business.workspace.status === "DELETED") {
-    throw new AuthError("UNAUTHORIZED", "You do not have access to this queue.");
-  }
-
   if (businessId && queue.businessId !== businessId) {
     throw new AuthError("UNAUTHORIZED", "Queue does not belong to this business.");
   }
 
-  const { business: businessWithWorkspace, ...queueRest } = queue;
-  const { workspace, ...businessRest } = businessWithWorkspace;
+  const { workspace, business, role, assignedQueueIds } =
+    await getAuthorizedBusinessForUser(user, queue.businessId, "STAFF");
 
-  return { workspace, business: businessRest, queue: queueRest };
+  if (action === "MANAGE") {
+    if (role !== "OWNER") {
+      throw new AuthError("UNAUTHORIZED", "Only business owners can modify queue settings.");
+    }
+  } else if (role === "STAFF") {
+    // Staff can only operate queues they are explicitly assigned to
+    if (!assignedQueueIds.includes(queue.id)) {
+      throw new AuthError("UNAUTHORIZED", "You are not assigned to operate this queue.");
+    }
+  }
+
+  const { business: _businessWithWorkspace, ...queueRest } = queue;
+  return { workspace, business, queue: queueRest, role };
 }

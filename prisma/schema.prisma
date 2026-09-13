@@ -11,6 +11,17 @@ datasource db {
 // ENUMS
 // ============================================================
 
+enum BusinessRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+enum MemberStatus {
+  ACTIVE
+  INVITED
+}
+
 enum SubscriptionPlan {
   FREE
   STARTER
@@ -77,8 +88,9 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  ownedWorkspaces Workspace[] @relation("WorkspaceOwner")
-  createdQueues   Queue[]     @relation("QueueCreatedBy")
+  ownedWorkspaces     Workspace[]      @relation("WorkspaceOwner")
+  createdQueues       Queue[]          @relation("QueueCreatedBy")
+  businessMemberships BusinessMember[]
 
   @@index([clerkId])
   @@map("users")
@@ -129,8 +141,9 @@ model Business {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   queues    Queue[]
+  members   BusinessMember[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId])
@@ -161,8 +174,9 @@ model Queue {
 
   workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   business     Business     @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  createdBy    User         @relation("QueueCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  queueEntries QueueEntry[]
+  createdBy        User                    @relation("QueueCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  queueEntries     QueueEntry[]
+  staffAssignments StaffQueueAssignment[]
 
   @@unique([businessId, slug])
   @@index([workspaceId])
@@ -206,4 +220,48 @@ model QueueEntry {
   @@index([queueId, position])
   @@index([trackingToken])
   @@map("queue_entries")
+}
+
+// ============================================================
+// BUSINESS MEMBER (Staff & Team)
+// ============================================================
+
+model BusinessMember {
+  id               String                 @id @default(cuid())
+  businessId       String
+  userId           String?
+  email            String
+  role             BusinessRole           @default(STAFF)
+  status           MemberStatus           @default(INVITED)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  business         Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user             User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  queueAssignments StaffQueueAssignment[]
+
+  @@unique([businessId, email])
+  @@index([businessId])
+  @@index([userId])
+  @@index([email])
+  @@map("business_members")
+}
+
+// ============================================================
+// STAFF QUEUE ASSIGNMENT
+// ============================================================
+
+model StaffQueueAssignment {
+  id         String         @id @default(cuid())
+  memberId   String
+  queueId    String
+  createdAt  DateTime       @default(now())
+
+  member     BusinessMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  queue      Queue          @relation(fields: [queueId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, queueId])
+  @@index([memberId])
+  @@index([queueId])
+  @@map("staff_queue_assignments")
 }

@@ -1,5 +1,5 @@
 import { AuthError, getCurrentUser } from "@/lib/auth";
-import { getCurrentWorkspace } from "@/lib/tenant";
+import { getCurrentWorkspace, listAccessibleBusinessesForUser } from "@/lib/tenant";
 import { prisma } from "@/lib/prisma";
 import { AppHeader } from "@/components/dashboard/app-header";
 import { CreateBusinessDialog } from "@/components/dashboard/create-business-form";
@@ -18,30 +18,25 @@ export default async function BusinessesPage() {
   try {
     const user = await getCurrentUser();
     const workspace = await getCurrentWorkspace(user);
+    const businesses = await listAccessibleBusinessesForUser(user);
 
-    if (!workspace) {
+    if (!workspace && businesses.length === 0) {
       redirect("/dashboard");
     }
 
-    const businesses = await prisma.business.findMany({
-      where: { workspaceId: workspace.id },
-      orderBy: { createdAt: "desc" },
-      include: { _count: { select: { queues: true } } },
-    });
-
     return (
       <div className="min-h-screen bg-slate-50">
-        <AppHeader title={workspace.name} subtitle="Businesses" />
+        <AppHeader title={workspace?.name ?? "Smart Queue"} subtitle="Businesses" />
 
         <main className="mx-auto max-w-6xl px-6 py-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-2xl font-semibold">Businesses</h2>
               <p className="mt-1 max-w-xl text-sm text-slate-500">
-                Locations and brands inside this workspace. Add a business before you create queues.
+                Locations and brands you have access to. Manage your queues and team members.
               </p>
             </div>
-            <CreateBusinessDialog />
+            {workspace ? <CreateBusinessDialog /> : null}
           </div>
 
           {businesses.length === 0 ? (
@@ -50,9 +45,11 @@ export default async function BusinessesPage() {
               <p className="mt-1 text-sm text-slate-500">
                 Create your first business to start managing queues.
               </p>
-              <div className="mt-6 flex justify-center">
-                <CreateBusinessDialog label="Create Business" />
-              </div>
+              {workspace ? (
+                <div className="mt-6 flex justify-center">
+                  <CreateBusinessDialog label="Create Business" />
+                </div>
+              ) : null}
             </div>
           ) : (
             <ul className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -60,7 +57,20 @@ export default async function BusinessesPage() {
                 <li key={business.id} className="rounded-xl border bg-white p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="font-semibold">{business.name}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold">{business.name}</h3>
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+                            business.role === "OWNER"
+                              ? "border-purple-200 bg-purple-50 text-purple-700"
+                              : business.role === "MANAGER"
+                              ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                              : "border-blue-200 bg-blue-50 text-blue-700"
+                          }`}
+                        >
+                          {business.role}
+                        </span>
+                      </div>
                       {business.description ? (
                         <p className="mt-1 text-sm text-slate-600">{business.description}</p>
                       ) : (
@@ -69,7 +79,7 @@ export default async function BusinessesPage() {
                     </div>
                     <Link
                       href={`/businesses/${business.id}`}
-                      className="shrink-0 rounded-md border px-3 py-1.5 text-sm"
+                      className="shrink-0 rounded-md border px-3 py-1.5 text-sm hover:bg-slate-50"
                     >
                       View
                     </Link>

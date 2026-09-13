@@ -18,7 +18,7 @@ export default async function BusinessInsightsPage({
     let business;
     let workspace;
     try {
-      ({ business, workspace } = await getAuthorizedBusinessForUser(user, businessId));
+      ({ business, workspace } = await getAuthorizedBusinessForUser(user, businessId, "MANAGER"));
     } catch (err) {
       if (err instanceof AuthError && err.code === "UNAUTHENTICATED") {
         throw err;

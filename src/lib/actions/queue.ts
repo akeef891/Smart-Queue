@@ -86,7 +86,11 @@ export async function createQueue(input: unknown) {
       return { error: "Select a business before creating a queue." };
     }
 
-    const { business, workspace } = await getAuthorizedBusinessForUser(user, raw.businessId);
+    const { business, workspace } = await getAuthorizedBusinessForUser(
+      user,
+      raw.businessId,
+      "OWNER"
+    );
 
     const parsed = queueManageSchema.safeParse(input);
     if (!parsed.success) {
@@ -122,12 +126,17 @@ export async function createQueue(input: unknown) {
 export async function getQueues(businessId: string) {
   try {
     const user = await getCurrentUser();
-    const { business } = await getAuthorizedBusinessForUser(user, businessId);
+    const { business, role, assignedQueueIds } = await getAuthorizedBusinessForUser(user, businessId);
 
-    const queues = await prisma.queue.findMany({
+    let queues = await prisma.queue.findMany({
       where: { businessId: business.id },
       orderBy: { createdAt: "desc" },
     });
+
+    if (role === "STAFF") {
+      const assignedSet = new Set(assignedQueueIds);
+      queues = queues.filter((q) => assignedSet.has(q.id));
+    }
 
     return { queues };
   } catch (err) {
@@ -153,7 +162,12 @@ export async function updateQueue(input: unknown) {
       return { error: "Queue could not be updated." };
     }
 
-    const { queue, business } = await getAuthorizedQueueForUser(user, raw.queueId, raw.businessId);
+    const { queue, business } = await getAuthorizedQueueForUser(
+      user,
+      raw.queueId,
+      raw.businessId,
+      "MANAGE"
+    );
 
     const parsed = queueManageSchema.safeParse(input);
     if (!parsed.success) {
@@ -197,7 +211,12 @@ export async function updateQueueStatus(input: unknown) {
       return { error: "Choose Activate or Deactivate." };
     }
 
-    const { queue, business } = await getAuthorizedQueueForUser(user, raw.queueId, raw.businessId);
+    const { queue, business } = await getAuthorizedQueueForUser(
+      user,
+      raw.queueId,
+      raw.businessId,
+      "MANAGE"
+    );
 
     const updated = await prisma.queue.update({
       where: { id: queue.id },
@@ -219,7 +238,12 @@ export async function deleteQueue(input: unknown) {
       return { error: "Queue could not be deleted." };
     }
 
-    const { queue, business } = await getAuthorizedQueueForUser(user, raw.queueId, raw.businessId);
+    const { queue, business } = await getAuthorizedQueueForUser(
+      user,
+      raw.queueId,
+      raw.businessId,
+      "MANAGE"
+    );
 
     const activeCustomers = await prisma.queueEntry.count({
       where: {

@@ -33,7 +33,10 @@ export async function getQueueAnalytics(
 ) {
   try {
     const user = await getCurrentUser();
-    const { queue, business } = await getAuthorizedQueueForUser(user, queueId, businessId);
+    const { queue, business, role } = await getAuthorizedQueueForUser(user, queueId, businessId);
+    if (role === "STAFF") {
+      return { error: "Staff members do not have permission to view queue analytics." };
+    }
     const { start, end, label } = getAnalyticsPeriodRange(business.timezone, period);
 
     const entries = await prisma.queueEntry.findMany({

@@ -450,7 +450,11 @@ export async function getBusinessInsights(
 ): Promise<{ snapshot?: BusinessInsightsSnapshot; error?: string }> {
   try {
     const user = await getCurrentUser();
-    const { business, workspace } = await getAuthorizedBusinessForUser(user, businessId);
+    const { business, workspace } = await getAuthorizedBusinessForUser(
+      user,
+      businessId,
+      "MANAGER"
+    );
     const period = options?.period ?? "today";
 
     const range = getAnalyticsPeriodRange(business.timezone, period);

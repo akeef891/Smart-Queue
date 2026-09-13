@@ -3,7 +3,11 @@
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { AuthError, getCurrentUser } from "@/lib/auth";
-import { getAuthorizedBusinessForUser, getCurrentWorkspace } from "@/lib/tenant";
+import {
+  getAuthorizedBusinessForUser,
+  getCurrentWorkspace,
+  listAccessibleBusinessesForUser,
+} from "@/lib/tenant";
 import { businessManageSchema } from "@/lib/validations";
 import { slugify } from "@/lib/slug";
 import { revalidatePath } from "next/cache";
@@ -105,18 +109,7 @@ export async function createBusiness(input: unknown) {
 export async function getBusinesses() {
   try {
     const user = await getCurrentUser();
-    const workspace = await getCurrentWorkspace(user);
-
-    if (!workspace) {
-      return { businesses: [] };
-    }
-
-    const businesses = await prisma.business.findMany({
-      where: { workspaceId: workspace.id },
-      orderBy: { createdAt: "desc" },
-      include: { _count: { select: { queues: true } } },
-    });
-
+    const businesses = await listAccessibleBusinessesForUser(user);
     return { businesses };
   } catch (err) {
     return mapBusinessError(err, "getBusinesses");

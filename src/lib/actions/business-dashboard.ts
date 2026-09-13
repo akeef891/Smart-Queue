@@ -6,6 +6,7 @@ import { getAuthorizedBusinessForUser } from "@/lib/tenant";
 import { getAnalyticsPeriodRange } from "@/lib/analytics-range";
 import { queueAcceptsJoins } from "@/lib/queue-state";
 import type { QueueStatus } from "@/generated/prisma";
+import type { BusinessRole } from "@/lib/tenant";
 
 export type BusinessQueueSummary = {
   id: string;
@@ -31,6 +32,7 @@ export type BusinessDashboardSnapshot = {
   servedToday: number;
   cancelledToday: number;
   queues: BusinessQueueSummary[];
+  userRole: BusinessRole;
 };
 
 function hourInTimeZone(now: Date, timeZone: string) {
@@ -61,10 +63,10 @@ function countMap(rows: { queueId: string; _count: { _all: number } }[]) {
 export async function getBusinessDashboard(businessId: string) {
   try {
     const user = await getCurrentUser();
-    const { business, workspace } = await getAuthorizedBusinessForUser(user, businessId);
+    const { business, workspace, role, assignedQueueIds } = await getAuthorizedBusinessForUser(user, businessId);
     const { start, end } = getAnalyticsPeriodRange(business.timezone);
 
-    const queues = await prisma.queue.findMany({
+    let queues = await prisma.queue.findMany({
       where: { businessId: business.id, workspaceId: workspace.id },
       orderBy: { createdAt: "desc" },
       select: {
@@ -75,6 +77,11 @@ export async function getBusinessDashboard(businessId: string) {
         averageServiceTime: true,
       },
     });
+
+    if (role === "STAFF") {
+      const assignedSet = new Set(assignedQueueIds);
+      queues = queues.filter((queue) => assignedSet.has(queue.id));
+    }
 
     const queueIds = queues.map((queue) => queue.id);
 
@@ -147,6 +154,7 @@ export async function getBusinessDashboard(businessId: string) {
       servedToday: summaries.reduce((sum, queue) => sum + queue.servedToday, 0),
       cancelledToday: summaries.reduce((sum, queue) => sum + queue.cancelledToday, 0),
       queues: summaries,
+      userRole: role,
     };
 
     return { snapshot };
