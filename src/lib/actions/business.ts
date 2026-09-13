@@ -59,9 +59,11 @@ function revalidateBusinessPaths(businessId?: string) {
   }
 }
 
-export async function createBusiness(input: unknown) {
+import type { User } from "@/generated/prisma";
+
+export async function createBusiness(input: unknown, overrideUser?: User) {
   try {
-    const user = await getCurrentUser();
+    const user = overrideUser ?? (await getCurrentUser());
     const workspace = await getCurrentWorkspace(user);
 
     if (!workspace) {
@@ -96,6 +98,7 @@ export async function createBusiness(input: unknown) {
         slug,
         description,
         status: "ACTIVE",
+        timezone: "Asia/Kolkata",
       },
     });
 

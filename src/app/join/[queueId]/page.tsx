@@ -11,7 +11,7 @@ export default async function JoinQueuePage({
 
   const queue = await prisma.queue.findUnique({
     where: { id: queueId },
-    include: { business: { select: { name: true } } },
+    include: { business: { select: { name: true, logoUrl: true } } },
   });
 
   if (!queue) notFound();
@@ -25,8 +25,22 @@ export default async function JoinQueuePage({
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-10">
-      <p className="text-sm text-slate-500">{queue.business.name}</p>
-      <h1 className="text-2xl font-semibold">{queue.name}</h1>
+      <div className="flex items-center gap-3">
+        {queue.business.logoUrl ? (
+          <div className="relative flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+            <img
+              src={queue.business.logoUrl}
+              alt={`${queue.business.name} logo`}
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
+        ) : null}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Join Queue</p>
+          <p className="text-base font-bold text-slate-900">{queue.business.name}</p>
+        </div>
+      </div>
+      <h1 className="mt-4 text-2xl font-semibold">{queue.name}</h1>
 
       {!canJoin ? (
         <p className="mt-6 rounded-lg border bg-amber-50 p-4 text-sm text-amber-800">

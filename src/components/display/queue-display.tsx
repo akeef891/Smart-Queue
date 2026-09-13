@@ -89,14 +89,14 @@ export function QueueDisplay({
         setIsNewCallAnimating(false);
       }, 3500);
 
-      // Trigger audio chime if unmuted
-      if (!isMuted) {
+      // Trigger audio chime if unmuted and soundAlertEnabled is not false
+      if (!isMuted && snapshot.soundAlertEnabled !== false) {
         playNotificationSound("called");
       }
     }
 
     prevCalledRef.current = currentCalled;
-  }, [snapshot.currentlyCalled, isMuted]);
+  }, [snapshot.currentlyCalled, snapshot.soundAlertEnabled, isMuted]);
 
   // Toggle Fullscreen safely
   function toggleFullscreen() {
@@ -113,7 +113,9 @@ export function QueueDisplay({
     }
   }
 
-  const activeTicket = snapshot.currentlyCalled || snapshot.currentlyServing;
+  const activeTicket =
+    snapshot.currentlyCalled ||
+    (snapshot.showCurrentlyServing !== false ? snapshot.currentlyServing : null);
   const isCalled = Boolean(snapshot.currentlyCalled);
   const hasWaiting = snapshot.nextTickets.length > 0;
 
@@ -126,15 +128,25 @@ export function QueueDisplay({
       {/* Top Header Bar */}
       <header className="flex flex-wrap items-center justify-between border-b border-slate-800/80 bg-slate-950/80 px-6 py-4 backdrop-blur-md sm:px-10">
         <div className="flex items-center gap-4">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-slate-950 font-black shadow-lg shadow-emerald-500/20 text-lg">
-            SQ
-          </div>
+          {snapshot.logoUrl ? (
+            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl border border-slate-700/80 bg-slate-900 shadow-md">
+              <img
+                src={snapshot.logoUrl}
+                alt={`${snapshot.businessName} logo`}
+                className="max-h-full max-w-full object-contain p-1"
+              />
+            </div>
+          ) : (
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-slate-950 font-black shadow-lg shadow-emerald-500/20 text-lg">
+              SQ
+            </div>
+          )}
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              {snapshot.businessName}
+              {snapshot.brandingText || snapshot.businessName}
             </p>
             <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
-              {snapshot.queueName}
+              {snapshot.displayTitle || snapshot.queueName}
             </h1>
           </div>
         </div>
@@ -266,9 +278,11 @@ export function QueueDisplay({
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">
                   Next in Line
                 </h3>
-                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-300">
-                  {snapshot.totalWaiting} waiting
-                </span>
+                {snapshot.showWaitingCount !== false ? (
+                  <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-300">
+                    {snapshot.totalWaiting} waiting
+                  </span>
+                ) : null}
               </div>
               <p className="text-xs text-slate-500">Please be ready when called</p>
             </div>
@@ -312,7 +326,7 @@ export function QueueDisplay({
         </div>
 
         {/* Join QR Card */}
-        {joinQrDataUrl ? (
+        {snapshot.showQrCode !== false && joinQrDataUrl ? (
           <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/90 px-3 py-2 shadow-sm">
             <img
               src={joinQrDataUrl}
@@ -326,6 +340,10 @@ export function QueueDisplay({
               </p>
               <p className="text-[11px] text-slate-400">Open camera on your phone</p>
             </div>
+          </div>
+        ) : snapshot.brandingText ? (
+          <div className="text-xs text-slate-400 font-medium">
+            {snapshot.brandingText}
           </div>
         ) : (
           <div className="text-xs text-slate-500 font-mono">

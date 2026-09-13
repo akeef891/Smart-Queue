@@ -132,11 +132,12 @@ model Business {
   description  String?
   type         BusinessType   @default(OTHER)
   phone        String?
+  email        String?
   address      String?
   logoUrl      String?
   openingTime  DateTime?      @db.Time()
   closingTime  DateTime?      @db.Time()
-  timezone     String         @default("UTC")
+  timezone     String         @default("Asia/Kolkata")
   status       BusinessStatus @default(ACTIVE)
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
@@ -144,6 +145,7 @@ model Business {
   workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   queues    Queue[]
   members   BusinessMember[]
+  settings  BusinessSettings?
 
   @@unique([workspaceId, slug])
   @@index([workspaceId])
@@ -264,4 +266,42 @@ model StaffQueueAssignment {
   @@index([memberId])
   @@index([queueId])
   @@map("staff_queue_assignments")
+}
+
+// ============================================================
+// BUSINESS SETTINGS
+// ============================================================
+
+model BusinessSettings {
+  id                     String   @id @default(cuid())
+  businessId             String   @unique
+  defaultQueueName       String   @default("General Queue")
+  defaultServiceTime     Int      @default(10) // minutes
+  maxQueueCapacity       Int?
+  allowCustomerLeave     Boolean  @default(true)
+  allowCustomerRejoin    Boolean  @default(false)
+  autoExpireStaleTickets Boolean  @default(false)
+  noShowHandling         String   @default("MANUAL")
+
+  welcomeMessage         String?
+  queueInstructions      String?
+  enableNotifications    Boolean  @default(true)
+  enableQrJoin           Boolean  @default(true)
+
+  displayTitle           String   @default("Now Serving")
+  showQrCode             Boolean  @default(true)
+  showCurrentlyServing   Boolean  @default(true)
+  showWaitingCount       Boolean  @default(true)
+  brandingText           String?
+  soundAlertEnabled      Boolean  @default(true)
+
+  operatingHours         Json?
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  business               Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("business_settings")
 }

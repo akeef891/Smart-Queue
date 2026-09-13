@@ -122,6 +122,7 @@ function BusinessQuickActions({
             Team & Staff
           </Link>
         ) : null}
+        {/* Settings is now prominently placed in the top header */}
         <a
           href="#queues"
           className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-slate-50"
@@ -172,17 +173,28 @@ export function BusinessDashboard({
   return (
     <div className="space-y-6">
       <section className="rounded-xl border bg-white p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm text-slate-500">
-              {snapshot.greeting}, {snapshot.businessName}
-            </p>
-            <h2 className="mt-1 text-2xl font-semibold">{snapshot.businessName}</h2>
-            <p className="mt-2 text-sm text-slate-600">
-              {snapshot.userRole === "STAFF"
-                ? "Assigned live queues operational dashboard."
-                : "Here's what's happening across your queues."}
-            </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            {snapshot.logoUrl ? (
+              <div className="relative flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-1 shadow-sm">
+                <img
+                  src={snapshot.logoUrl}
+                  alt={`${snapshot.businessName} logo`}
+                  className="max-h-full max-w-full object-contain"
+                />
+              </div>
+            ) : null}
+            <div>
+              <p className="text-sm text-slate-500">
+                {snapshot.greeting}, {snapshot.businessName}
+              </p>
+              <h2 className="mt-0.5 text-2xl font-semibold text-slate-900">{snapshot.businessName}</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                {snapshot.userRole === "STAFF"
+                  ? "Assigned live queues operational dashboard."
+                  : "Here's what's happening across your queues."}
+              </p>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <span
@@ -214,6 +226,14 @@ export function BusinessDashboard({
                 className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
               >
                 Insights
+              </Link>
+            ) : null}
+            {snapshot.userRole !== "STAFF" ? (
+              <Link
+                href={`/businesses/${businessId}/settings`}
+                className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Settings
               </Link>
             ) : null}
             {snapshot.userRole === "OWNER" ? (

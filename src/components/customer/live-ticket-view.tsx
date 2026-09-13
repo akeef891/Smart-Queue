@@ -58,7 +58,9 @@ export function LiveTicketView({
     });
 
   const statusLabel = STATUS_LABELS[ticket.status] ?? ticket.status;
-  const canLeave = ticket.status === "WAITING" || ticket.status === "CALLED";
+  const canLeave =
+    (ticket.status === "WAITING" || ticket.status === "CALLED") &&
+    ticket.allowCustomerLeave !== false;
   const busy = pending || locked;
 
   function confirmLeave() {
@@ -80,25 +82,45 @@ export function LiveTicketView({
 
   return (
     <>
-      <InPageNotificationBanner
-        notifications={notifications}
-        onDismiss={dismissNotification}
-      />
+      {ticket.enableNotifications !== false ? (
+        <InPageNotificationBanner
+          notifications={notifications}
+          onDismiss={dismissNotification}
+        />
+      ) : null}
 
       <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-10 text-center">
         <div className="flex items-center justify-between">
           <LiveStatus status={liveStatus} />
-          <NotificationPermissionControl
-            permission={permission}
-            onRequestPermission={requestPermission}
-          />
+          {ticket.enableNotifications !== false ? (
+            <NotificationPermissionControl
+              permission={permission}
+              onRequestPermission={requestPermission}
+            />
+          ) : null}
         </div>
 
-        <p className="mt-4 text-sm font-medium uppercase tracking-wide text-slate-400">
-          Your Queue Ticket
-        </p>
-        <p className="mt-3 text-sm text-slate-500">{ticket.businessName}</p>
-        <p className="text-base font-medium">{ticket.queueName}</p>
+        {ticket.logoUrl ? (
+          <div className="mt-4 flex flex-col items-center">
+            <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+              <img
+                src={ticket.logoUrl}
+                alt={`${ticket.businessName} logo`}
+                className="max-h-full max-w-full object-contain"
+              />
+            </div>
+            <p className="mt-2 text-sm font-semibold text-slate-800">{ticket.businessName}</p>
+            <p className="text-xs text-slate-500">{ticket.queueName}</p>
+          </div>
+        ) : (
+          <>
+            <p className="mt-4 text-sm font-medium uppercase tracking-wide text-slate-400">
+              Your Queue Ticket
+            </p>
+            <p className="mt-3 text-sm text-slate-500">{ticket.businessName}</p>
+            <p className="text-base font-medium">{ticket.queueName}</p>
+          </>
+        )}
 
         <p className="mt-8 text-xs uppercase tracking-wide text-slate-400">Ticket</p>
         <p className="text-5xl font-bold tracking-tight">{ticket.label}</p>

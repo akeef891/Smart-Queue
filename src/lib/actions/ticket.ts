@@ -91,7 +91,16 @@ export async function joinQueue(input: unknown) {
 
       const queue = await tx.queue.findFirst({
         where: { id: raw.queueId as string },
-        include: { business: { select: { id: true, name: true, status: true } } },
+        include: {
+          business: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              settings: { select: { maxQueueCapacity: true } },
+            },
+          },
+        },
       });
 
       if (!queue || queue.business.status === "ARCHIVED") {
@@ -108,7 +117,8 @@ export async function joinQueue(input: unknown) {
         where: { queueId: queue.id, status: "WAITING" },
       });
 
-      if (queue.maxCapacity && waitingCount >= queue.maxCapacity) {
+      const effectiveMaxCapacity = queue.maxCapacity ?? queue.business.settings?.maxQueueCapacity ?? null;
+      if (effectiveMaxCapacity && waitingCount >= effectiveMaxCapacity) {
         throw new JoinError("This queue is currently full.");
       }
 
@@ -365,11 +375,27 @@ export async function leaveQueue(input: unknown) {
           queueId: raw.queueId as string,
           queue: { businessId: raw.businessId as string },
         },
+        include: {
+          queue: {
+            include: {
+              business: {
+                select: {
+                  settings: { select: { allowCustomerLeave: true } },
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!entry) {
         throw new JoinError("This ticket could not be found.");
       }
+
+      if (entry.queue.business.settings?.allowCustomerLeave === false) {
+        throw new JoinError("Leaving the queue has been disabled by this business.");
+      }
+
       if (
         !CUSTOMER_LEAVE_FROM.includes(entry.status) ||
         !canTransitionEntry(entry.status, "CANCELLED")
@@ -576,6 +602,9 @@ export type PublicTicketSnapshot = {
   position: number;
   currentlyServingLabel: string | null;
   currentlyCalledLabel: string | null;
+  allowCustomerLeave?: boolean;
+  enableNotifications?: boolean;
+  logoUrl?: string | null;
 };
 
 export async function getPublicTicketSnapshot(
@@ -599,7 +628,18 @@ export async function getPublicTicketSnapshot(
           select: {
             slug: true,
             name: true,
-            business: { select: { name: true } },
+            business: {
+              select: {
+                name: true,
+                logoUrl: true,
+                settings: {
+                  select: {
+                    allowCustomerLeave: true,
+                    enableNotifications: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -646,6 +686,9 @@ export async function getPublicTicketSnapshot(
         position,
         currentlyServingLabel,
         currentlyCalledLabel,
+        allowCustomerLeave: entry.queue.business.settings?.allowCustomerLeave ?? true,
+        enableNotifications: entry.queue.business.settings?.enableNotifications ?? true,
+        logoUrl: entry.queue.business.logoUrl ?? null,
       } satisfies PublicTicketSnapshot,
     };
   } catch (err) {
@@ -666,6 +709,13 @@ export type PublicQueueDisplaySnapshot = {
   nextTickets: string[];
   totalWaiting: number;
   updatedAt: string;
+  displayTitle?: string;
+  showQrCode?: boolean;
+  showCurrentlyServing?: boolean;
+  showWaitingCount?: boolean;
+  brandingText?: string | null;
+  soundAlertEnabled?: boolean;
+  logoUrl?: string | null;
 };
 
 export async function getPublicQueueDisplaySnapshot(
@@ -686,7 +736,24 @@ export async function getPublicQueueDisplaySnapshot(
         status: true,
         averageServiceTime: true,
         businessId: true,
-        business: { select: { id: true, name: true, status: true } },
+        business: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            status: true,
+            settings: {
+              select: {
+                displayTitle: true,
+                showQrCode: true,
+                showCurrentlyServing: true,
+                showWaitingCount: true,
+                brandingText: true,
+                soundAlertEnabled: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -717,6 +784,8 @@ export async function getPublicQueueDisplaySnapshot(
       where: { queueId: queue.id, status: "WAITING" },
     });
 
+    const s = queue.business.settings;
+
     return {
       snapshot: {
         businessId: queue.business.id,
@@ -735,6 +804,13 @@ export async function getPublicQueueDisplaySnapshot(
         nextTickets: waiting.map((w) => formatTicketNumber(queue.slug, w.tokenNumber)),
         totalWaiting,
         updatedAt: new Date().toISOString(),
+        displayTitle: s?.displayTitle ?? "Now Serving",
+        showQrCode: s?.showQrCode ?? true,
+        showCurrentlyServing: s?.showCurrentlyServing ?? true,
+        showWaitingCount: s?.showWaitingCount ?? true,
+        brandingText: s?.brandingText ?? null,
+        soundAlertEnabled: s?.soundAlertEnabled ?? true,
+        logoUrl: queue.business.logoUrl ?? null,
       } satisfies PublicQueueDisplaySnapshot,
     };
   } catch (err) {

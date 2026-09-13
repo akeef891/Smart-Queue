@@ -24,6 +24,7 @@ export type BusinessQueueSummary = {
 export type BusinessDashboardSnapshot = {
   businessName: string;
   businessStatus: string;
+  logoUrl?: string | null;
   greeting: string;
   activeQueues: number;
   waiting: number;
@@ -146,7 +147,8 @@ export async function getBusinessDashboard(businessId: string) {
     const snapshot: BusinessDashboardSnapshot = {
       businessName: business.name,
       businessStatus: business.status,
-      greeting: greetingForHour(hourInTimeZone(new Date(), business.timezone || "UTC")),
+      logoUrl: business.logoUrl ?? null,
+      greeting: greetingForHour(hourInTimeZone(new Date(), business.timezone || "Asia/Kolkata")),
       activeQueues: summaries.filter((queue) => queueAcceptsJoins(queue.status)).length,
       waiting: summaries.reduce((sum, queue) => sum + queue.waiting, 0),
       serving: summaries.reduce((sum, queue) => sum + queue.serving, 0),
