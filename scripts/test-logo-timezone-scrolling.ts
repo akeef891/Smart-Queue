@@ -380,8 +380,8 @@ async function runTestSuite() {
     // ----------------------------------------------------
     {
       const displaySnap = await getPublicQueueDisplaySnapshot(bizA.id, qA1.id);
-      assert("snapshot" in displaySnap, "TV display snapshot loaded");
-      if ("snapshot" in displaySnap) {
+      assert("snapshot" in displaySnap && displaySnap.snapshot !== undefined, "TV display snapshot loaded");
+      if ("snapshot" in displaySnap && displaySnap.snapshot !== undefined) {
         assert(displaySnap.snapshot.logoUrl === uploadedLogoUrl, "Scenario 14: TV display snapshot exposes logoUrl");
         assert(displaySnap.snapshot.businessName === "Apex Diagnostics", "Scenario 14b: TV display exposes businessName");
       }
@@ -450,7 +450,12 @@ async function runTestSuite() {
       assert("snapshot" in afterRemove && afterRemove.snapshot.profile.logoUrl === null, "Scenario 18b: Logo is null after removal");
 
       const displayAfter = await getPublicQueueDisplaySnapshot(bizA.id, qA1.id);
-      assert("snapshot" in displayAfter && displayAfter.snapshot.logoUrl === null, "Scenario 18c: TV display reflects null logo");
+      assert(
+        "snapshot" in displayAfter &&
+          displayAfter.snapshot !== undefined &&
+          displayAfter.snapshot.logoUrl === null,
+        "Scenario 18c: TV display reflects null logo"
+      );
     }
 
     console.log("==========================================================");
