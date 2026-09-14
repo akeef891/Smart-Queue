@@ -9,7 +9,7 @@ import { canTransitionEntry, queueAcceptsJoins } from "@/lib/queue-state";
 import { formatTicketNumber } from "@/lib/ticket";
 import { notifyQueueChanged } from "@/lib/realtime-notify";
 import { revalidatePath } from "next/cache";
-import type { QueueEntry, QueueEntryStatus } from "@/generated/prisma";
+import type { QueueEntry, QueueEntryStatus, User } from "@/generated/prisma";
 
 class JoinError extends Error {
   constructor(message: string) {
@@ -86,10 +86,11 @@ export async function joinQueue(input: unknown) {
         ? extra.customerEmail.trim()
         : null;
 
-    const entry = await prisma.$transaction(async (tx) => {
-      await lockQueue(tx, raw.queueId as string);
+    const entry = await prisma.$transaction(
+      async (tx) => {
+        await lockQueue(tx, raw.queueId as string);
 
-      const queue = await tx.queue.findFirst({
+        const queue = await tx.queue.findFirst({
         where: { id: raw.queueId as string },
         include: {
           business: {
@@ -143,7 +144,7 @@ export async function joinQueue(input: unknown) {
           status: "WAITING",
         },
       });
-    });
+    }, { maxWait: 10000, timeout: 20000 });
 
     const queue = await prisma.queue.findFirstOrThrow({
       where: { id: entry.queueId },
@@ -168,9 +169,9 @@ export async function joinQueue(input: unknown) {
   }
 }
 
-export async function callNextTicket(input: unknown) {
+export async function callNextTicket(input: unknown, overrideUser?: User) {
   try {
-    const user = await getCurrentUser();
+    const user = overrideUser ?? (await getCurrentUser());
     const raw = input as { businessId?: unknown; queueId?: unknown };
     if (typeof raw?.businessId !== "string" || typeof raw?.queueId !== "string") {
       return { error: "Queue could not be updated." };
@@ -211,7 +212,7 @@ export async function callNextTicket(input: unknown) {
       }
 
       return next;
-    });
+    }, { maxWait: 10000, timeout: 20000 });
 
     revalidateTicketPaths(business.id, queue.id, result.trackingToken);
     notifyQueueChanged(queue.id);
@@ -229,8 +230,9 @@ async function transitionTicket(opts: {
   to: QueueEntryStatus;
   extra: Record<string, Date>;
   bumpServed?: boolean;
+  overrideUser?: User;
 }) {
-  const user = await getCurrentUser();
+  const user = opts.overrideUser ?? (await getCurrentUser());
   const { queue, business } = await getAuthorizedQueueForUser(
     user,
     opts.queueId,
@@ -268,14 +270,14 @@ async function transitionTicket(opts: {
     }
 
     return entry;
-  });
+  }, { maxWait: 10000, timeout: 20000 });
 
   revalidateTicketPaths(business.id, queue.id, result.trackingToken);
   notifyQueueChanged(queue.id);
   return { ok: true as const };
 }
 
-export async function startServingTicket(input: unknown) {
+export async function startServingTicket(input: unknown, overrideUser?: User) {
   try {
     const raw = input as { businessId?: unknown; queueId?: unknown; ticketId?: unknown };
     if (
@@ -293,13 +295,16 @@ export async function startServingTicket(input: unknown) {
       from: ["CALLED"],
       to: "SERVING",
       extra: { servingAt: new Date() },
+      overrideUser,
     });
   } catch (err) {
     return mapError(err, "startServingTicket");
   }
 }
 
-export async function completeTicket(input: unknown) {
+export const startServing = startServingTicket;
+
+export async function completeTicket(input: unknown, overrideUser?: User) {
   try {
     const raw = input as { businessId?: unknown; queueId?: unknown; ticketId?: unknown };
     if (
@@ -318,13 +323,14 @@ export async function completeTicket(input: unknown) {
       to: "COMPLETED",
       extra: { completedAt: new Date() },
       bumpServed: true,
+      overrideUser,
     });
   } catch (err) {
     return mapError(err, "completeTicket");
   }
 }
 
-export async function cancelTicket(input: unknown) {
+export async function cancelTicket(input: unknown, overrideUser?: User) {
   try {
     const raw = input as { businessId?: unknown; queueId?: unknown; ticketId?: unknown };
     if (
@@ -342,11 +348,14 @@ export async function cancelTicket(input: unknown) {
       from: ["WAITING", "CALLED", "SERVING"],
       to: "CANCELLED",
       extra: { cancelledAt: new Date() },
+      overrideUser,
     });
   } catch (err) {
     return mapError(err, "cancelTicket");
   }
 }
+
+export const callTicket = callNextTicket;
 
 const CUSTOMER_LEAVE_FROM: QueueEntryStatus[] = ["WAITING", "CALLED"];
 
@@ -413,7 +422,7 @@ export async function leaveQueue(input: unknown) {
       }
 
       return entry;
-    });
+    }, { maxWait: 10000, timeout: 20000 });
 
     revalidateTicketPaths(raw.businessId as string, result.queueId, result.trackingToken);
     notifyQueueChanged(result.queueId);

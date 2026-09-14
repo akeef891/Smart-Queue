@@ -47,15 +47,19 @@ function mapBusinessError(err: unknown, action: string): { error: string } {
     return { error: "We're having trouble connecting to the database. Please try again in a moment." };
   }
 
-  console.error(`${action} failed:`, err instanceof Error ? err.name : "unknown");
+  console.error(`${action} failed:`, err instanceof Error ? err.message : err);
   return { error: "Something went wrong. Please try again." };
 }
 
 function revalidateBusinessPaths(businessId?: string) {
-  revalidatePath("/dashboard");
-  revalidatePath("/businesses");
-  if (businessId) {
-    revalidatePath(`/businesses/${businessId}`);
+  try {
+    revalidatePath("/dashboard");
+    revalidatePath("/businesses");
+    if (businessId) {
+      revalidatePath(`/businesses/${businessId}`);
+    }
+  } catch {
+    // Silently ignore if invoked outside Next.js request context
   }
 }
 

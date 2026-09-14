@@ -55,11 +55,15 @@ function mapQueueError(err: unknown, action: string): { error: string } {
 }
 
 function revalidateQueuePaths(businessId: string, queueId?: string) {
-  revalidatePath("/dashboard");
-  revalidatePath("/businesses");
-  revalidatePath(`/businesses/${businessId}`);
-  if (queueId) {
-    revalidatePath(`/businesses/${businessId}/queues/${queueId}`);
+  try {
+    revalidatePath("/dashboard");
+    revalidatePath("/businesses");
+    revalidatePath(`/businesses/${businessId}`);
+    if (queueId) {
+      revalidatePath(`/businesses/${businessId}/queues/${queueId}`);
+    }
+  } catch {
+    // Ignored in non-Next.js request contexts
   }
 }
 

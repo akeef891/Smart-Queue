@@ -22,7 +22,9 @@ export function useTicketNotifications({
   ticket: PublicTicketSnapshot;
   trackingToken: string;
 }) {
-  const [permission, setPermission] = useState<BrowserPermissionState>("default");
+  const [permission, setPermission] = useState<BrowserPermissionState>(() =>
+    getNotificationPermission()
+  );
   const [notifications, setNotifications] = useState<CustomerNotification[]>([]);
   const prevSnapshotRef = useRef<PublicTicketSnapshot | null>(null);
   const notifiedKeysRef = useRef<Set<string>>(new Set());
@@ -30,7 +32,6 @@ export function useTicketNotifications({
 
   // Initialize permission and loaded deduplication keys from sessionStorage
   useEffect(() => {
-    setPermission(getNotificationPermission());
     if (typeof document !== "undefined") {
       originalTitleRef.current = document.title;
     }

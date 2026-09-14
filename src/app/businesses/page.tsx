@@ -15,18 +15,41 @@ function formatDate(value: Date) {
 }
 
 export default async function BusinessesPage() {
+  let user;
   try {
-    const user = await getCurrentUser();
-    const workspace = await getCurrentWorkspace(user);
-    const businesses = await listAccessibleBusinessesForUser(user);
-
-    if (!workspace && businesses.length === 0) {
-      redirect("/dashboard");
+    user = await getCurrentUser();
+  } catch (err) {
+    if (err instanceof AuthError && err.code === "UNAUTHENTICATED") {
+      redirect("/sign-in");
     }
+    throw err;
+  }
 
+  let workspace;
+  let businesses;
+  try {
+    workspace = await getCurrentWorkspace(user);
+    businesses = await listAccessibleBusinessesForUser(user);
+  } catch {
     return (
       <div className="min-h-screen bg-slate-50">
-        <AppHeader title={workspace?.name ?? "Smart Queue"} subtitle="Businesses" />
+        <AppHeader title="Smart Queue" />
+        <main className="flex min-h-[calc(100vh-73px)] items-center justify-center px-6">
+          <p className="max-w-md text-center text-sm text-slate-600">
+            We couldn&apos;t load your businesses right now. Please refresh the page and try again.
+          </p>
+        </main>
+      </div>
+    );
+  }
+
+  if (!workspace && businesses.length === 0) {
+    redirect("/dashboard");
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <AppHeader title={workspace?.name ?? "Smart Queue"} subtitle="Businesses" />
 
         <main className="mx-auto max-w-6xl px-6 py-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -97,20 +120,4 @@ export default async function BusinessesPage() {
         </main>
       </div>
     );
-  } catch (err) {
-    if (err instanceof AuthError && err.code === "UNAUTHENTICATED") {
-      redirect("/sign-in");
-    }
-
-    return (
-      <div className="min-h-screen bg-slate-50">
-        <AppHeader title="Smart Queue" />
-        <main className="flex min-h-[calc(100vh-73px)] items-center justify-center px-6">
-          <p className="max-w-md text-center text-sm text-slate-600">
-            We couldn&apos;t load your businesses right now. Please refresh the page and try again.
-          </p>
-        </main>
-      </div>
-    );
-  }
 }

@@ -56,7 +56,11 @@ export async function createWorkspace(input: unknown) {
 
     const existing = await listAccessibleWorkspaces(user);
     if (existing.length > 0) {
-      revalidatePath("/dashboard");
+      try {
+        revalidatePath("/dashboard");
+      } catch {
+        // Ignored in non-Next.js request contexts
+      }
       return { workspace: existing[0] };
     }
 
@@ -71,7 +75,11 @@ export async function createWorkspace(input: unknown) {
       },
     });
 
-    revalidatePath("/dashboard");
+    try {
+      revalidatePath("/dashboard");
+    } catch {
+      // Ignored in non-Next.js request contexts
+    }
     return { workspace };
   } catch (err) {
     return mapCreateError(err);

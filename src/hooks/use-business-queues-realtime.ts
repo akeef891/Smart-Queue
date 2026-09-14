@@ -12,7 +12,11 @@ export function useBusinessQueuesRealtime(queueIds: string[], onChange: () => vo
     isBrowserRealtimeConfigured() && queueIds.length > 0 ? "connecting" : "off"
   );
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
   const idsKey = queueIds.join(",");
 
   useEffect(() => {
@@ -20,11 +24,9 @@ export function useBusinessQueuesRealtime(queueIds: string[], onChange: () => vo
     const client = getSupabaseBrowserClient();
 
     if (!client || ids.length === 0) {
-      setStatus("off");
       return;
     }
 
-    setStatus("connecting");
     let debounce: ReturnType<typeof setTimeout> | undefined;
 
     const channels = ids.map((queueId) => {

@@ -25,6 +25,15 @@ const removeStaffSchema = z.object({
   memberId: z.string().min(1, "Member ID is required."),
 });
 
+function revalidateStaffPaths(businessId: string) {
+  try {
+    revalidatePath(`/businesses/${businessId}/staff`);
+    revalidatePath(`/businesses/${businessId}`);
+  } catch {
+    // Ignored in non-Next.js request contexts
+  }
+}
+
 export type StaffMemberRecord = {
   id: string;
   email: string;
@@ -206,10 +215,9 @@ export async function addStaffMember(input: unknown): Promise<{
       }
 
       return newMember;
-    });
+    }, { maxWait: 10000, timeout: 20000 });
 
-    revalidatePath(`/businesses/${business.id}/staff`);
-    revalidatePath(`/businesses/${business.id}`);
+    revalidateStaffPaths(business.id);
     return { ok: true, memberId: member.id };
   } catch (err) {
     if (err instanceof AuthError) {
@@ -288,10 +296,9 @@ export async function updateStaffMember(input: unknown): Promise<{
           })),
         });
       }
-    });
+    }, { maxWait: 10000, timeout: 20000 });
 
-    revalidatePath(`/businesses/${business.id}/staff`);
-    revalidatePath(`/businesses/${business.id}`);
+    revalidateStaffPaths(business.id);
     return { ok: true };
   } catch (err) {
     if (err instanceof AuthError) {
@@ -343,8 +350,7 @@ export async function removeStaffMember(input: unknown): Promise<{
       where: { id: member.id },
     });
 
-    revalidatePath(`/businesses/${business.id}/staff`);
-    revalidatePath(`/businesses/${business.id}`);
+    revalidateStaffPaths(business.id);
     return { ok: true };
   } catch (err) {
     if (err instanceof AuthError) {

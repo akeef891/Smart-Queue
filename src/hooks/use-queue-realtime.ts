@@ -13,14 +13,16 @@ export function useQueueRealtime(queueId: string, onChange: () => void) {
     isBrowserRealtimeConfigured() ? "connecting" : "off"
   );
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     const channelName = queueRealtimeChannel(queueId);
     const client = getSupabaseBrowserClient();
 
     if (!client) {
-      setStatus("off");
       if (isDev) {
         console.warn("[realtime] subscription skipped: NEXT_PUBLIC_SUPABASE_URL and anon/publishable key are required", {
           channel: channelName,
@@ -30,7 +32,6 @@ export function useQueueRealtime(queueId: string, onChange: () => void) {
       return;
     }
 
-    setStatus("connecting");
     if (isDev) {
       console.info("[realtime] subscription attempt", {
         channel: channelName,

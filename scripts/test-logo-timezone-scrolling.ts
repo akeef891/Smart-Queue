@@ -10,8 +10,8 @@ import {
   joinQueue,
   getPublicTicketSnapshot,
   getPublicQueueDisplaySnapshot,
-  callTicket,
-  startServing,
+  callNextTicket,
+  startServingTicket,
   completeTicket,
 } from "../src/lib/actions/ticket";
 import { createBusiness } from "../src/lib/actions/business";
@@ -150,7 +150,7 @@ async function runTestSuite() {
 
     // 3. Setup Tenant B
     const wsB = await prisma.workspace.create({
-      data: { name: "Workspace B", slug: `${pfx}-wsb`, ownerId: ownerB.id },
+      data: { name: "Workspace B", slug: `${pfx}-wsb`, ownerId: ownerB.id, status: "ACTIVE" },
     });
     wsBId = wsB.id;
 
@@ -356,6 +356,7 @@ async function runTestSuite() {
     // Scenario 13: Public ticket snapshot safely exposes logo
     // ----------------------------------------------------
     let trackingToken = "";
+    let createdTicketId = "";
     {
       const joinRes = await joinQueue({
         businessId: bizA.id,
@@ -364,6 +365,7 @@ async function runTestSuite() {
       });
       assert("ticket" in joinRes && Boolean(joinRes.ticket), "Customer joined queue");
       trackingToken = (joinRes as any).ticket.trackingToken;
+      createdTicketId = (joinRes as any).ticket.id;
 
       const ticketSnap = await getPublicTicketSnapshot(bizA.id, qA1.id, trackingToken);
       assert("snapshot" in ticketSnap, "Public ticket snapshot loaded");
@@ -416,14 +418,14 @@ async function runTestSuite() {
     // Scenario 16: Existing queue operations remain fully functional
     // ----------------------------------------------------
     {
-      const callRes = await callTicket(bizA.id, qA1.id, { token: trackingToken }, ownerA);
-      assert("ok" in callRes, "Scenario 16a: Ticket successfully called");
+      const callRes = await callNextTicket({ businessId: bizA.id, queueId: qA1.id }, ownerA);
+      assert("ticketId" in callRes && Boolean(callRes.ticketId), "Scenario 16a: Ticket successfully called");
 
-      const serveRes = await startServing(bizA.id, qA1.id, { token: trackingToken }, ownerA);
-      assert("ok" in serveRes, "Scenario 16b: Ticket successfully moved to serving");
+      const serveRes = await startServingTicket({ businessId: bizA.id, queueId: qA1.id, ticketId: createdTicketId }, ownerA);
+      assert("ok" in serveRes && serveRes.ok === true, "Scenario 16b: Ticket successfully moved to serving");
 
-      const completeRes = await completeTicket(bizA.id, qA1.id, { token: trackingToken }, ownerA);
-      assert("ok" in completeRes, "Scenario 16c: Ticket successfully completed");
+      const completeRes = await completeTicket({ businessId: bizA.id, queueId: qA1.id, ticketId: createdTicketId }, ownerA);
+      assert("ok" in completeRes && completeRes.ok === true, "Scenario 16c: Ticket successfully completed");
     }
 
     // ----------------------------------------------------
@@ -458,10 +460,19 @@ async function runTestSuite() {
     // Cleanup
     console.log("Cleaning up test entities...");
     try {
-      if (bizAId) await prisma.business.delete({ where: { id: bizAId } }).catch(() => {});
-      if (bizBId) await prisma.business.delete({ where: { id: bizBId } }).catch(() => {});
-      if (wsAId) await prisma.workspace.delete({ where: { id: wsAId } }).catch(() => {});
-      if (wsBId) await prisma.workspace.delete({ where: { id: wsBId } }).catch(() => {});
+      const bizIds = [bizAId, bizBId].filter(Boolean) as string[];
+      if (bizIds.length > 0) {
+        await prisma.staffQueueAssignment.deleteMany({ where: { queue: { businessId: { in: bizIds } } } }).catch(() => {});
+        await prisma.queueEntry.deleteMany({ where: { queue: { businessId: { in: bizIds } } } }).catch(() => {});
+        await prisma.queue.deleteMany({ where: { businessId: { in: bizIds } } }).catch(() => {});
+        await prisma.businessMember.deleteMany({ where: { businessId: { in: bizIds } } }).catch(() => {});
+        await prisma.businessSettings.deleteMany({ where: { businessId: { in: bizIds } } }).catch(() => {});
+        await prisma.business.deleteMany({ where: { id: { in: bizIds } } }).catch(() => {});
+      }
+      const wsIds = [wsAId, wsBId].filter(Boolean) as string[];
+      if (wsIds.length > 0) {
+        await prisma.workspace.deleteMany({ where: { id: { in: wsIds } } }).catch(() => {});
+      }
       await prisma.user.deleteMany({
         where: { id: { in: [ownerA.id, managerA.id, staffA.id, ownerB.id, outsider.id] } },
       }).catch(() => {});

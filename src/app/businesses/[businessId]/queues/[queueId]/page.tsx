@@ -26,26 +26,34 @@ export default async function QueueDetailPage({
 }: {
   params: Promise<{ businessId: string; queueId: string }>;
 }) {
+  let user;
   try {
-    const user = await getCurrentUser();
-    const { businessId, queueId } = await params;
-
-    let queue;
-    let business;
-    let workspace;
-    let role;
-    try {
-      ({ queue, business, workspace, role } = await getAuthorizedQueueForUser(
-        user,
-        queueId,
-        businessId
-      ));
-    } catch (err) {
-      if (err instanceof AuthError && err.code === "UNAUTHENTICATED") {
-        throw err;
-      }
-      notFound();
+    user = await getCurrentUser();
+  } catch (err) {
+    if (err instanceof AuthError && err.code === "UNAUTHENTICATED") {
+      redirect("/sign-in");
     }
+    throw err;
+  }
+
+  const { businessId, queueId } = await params;
+
+  let queue;
+  let business;
+  let workspace;
+  let role;
+  try {
+    ({ queue, business, workspace, role } = await getAuthorizedQueueForUser(
+      user,
+      queueId,
+      businessId
+    ));
+  } catch (err) {
+    if (err instanceof AuthError && err.code === "UNAUTHENTICATED") {
+      redirect("/sign-in");
+    }
+    notFound();
+  }
 
     const [serving, called, waiting, recentlyCompleted] = await Promise.all([
       prisma.queueEntry.findFirst({
@@ -202,10 +210,4 @@ export default async function QueueDetailPage({
         </main>
       </div>
     );
-  } catch (err) {
-    if (err instanceof AuthError && err.code === "UNAUTHENTICATED") {
-      redirect("/sign-in");
-    }
-    throw err;
-  }
 }

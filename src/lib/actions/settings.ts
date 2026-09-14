@@ -506,7 +506,7 @@ export async function archiveBusiness(businessId: string, overrideUser?: User) {
         where: { id: business.id },
         data: { status: "ARCHIVED" },
       });
-    });
+    }, { maxWait: 10000, timeout: 25000 });
 
     revalidateSettingsPaths(business.id);
     return { ok: true };
@@ -550,7 +550,7 @@ export async function deleteBusiness(businessId: string, overrideUser?: User) {
       await tx.business.delete({
         where: { id: business.id },
       });
-    });
+    }, { maxWait: 10000, timeout: 25000 });
 
     try {
       revalidatePath("/businesses");

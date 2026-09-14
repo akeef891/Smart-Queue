@@ -20,27 +20,49 @@ function DashboardHeader({ title, subtitle }: { title: string; subtitle?: string
 }
 
 export default async function DashboardPage() {
+  let user;
   try {
-    const user = await getCurrentUser();
-    const workspace = await getCurrentWorkspace(user);
-
-    if (!workspace) {
-      return (
-        <div className="min-h-screen bg-slate-50">
-          <DashboardHeader title="Smart Queue" subtitle="Get started" />
-          <main className="flex min-h-[calc(100vh-73px)] items-center justify-center px-6 py-12">
-            <div className="w-full max-w-md rounded-xl border bg-white p-8 text-center shadow-sm">
-              <h2 className="text-xl font-semibold">Create your first workspace</h2>
-              <p className="mt-2 text-sm text-slate-500">
-                A workspace is your organization. Everything — businesses, queues, and customers —
-                lives inside it.
-              </p>
-              <CreateWorkspaceForm />
-            </div>
-          </main>
-        </div>
-      );
+    user = await getCurrentUser();
+  } catch (err) {
+    if (err instanceof AuthError && err.code === "UNAUTHENTICATED") {
+      redirect("/sign-in");
     }
+    throw err;
+  }
+
+  let workspace;
+  try {
+    workspace = await getCurrentWorkspace(user);
+  } catch {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <DashboardHeader title="Smart Queue" />
+        <main className="flex min-h-[calc(100vh-73px)] items-center justify-center px-6">
+          <p className="max-w-md text-center text-sm text-slate-600">
+            We couldn&apos;t load your dashboard right now. Please refresh the page and try again.
+          </p>
+        </main>
+      </div>
+    );
+  }
+
+  if (!workspace) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <DashboardHeader title="Smart Queue" subtitle="Get started" />
+        <main className="flex min-h-[calc(100vh-73px)] items-center justify-center px-6 py-12">
+          <div className="w-full max-w-md rounded-xl border bg-white p-8 text-center shadow-sm">
+            <h2 className="text-xl font-semibold">Create your first workspace</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              A workspace is your organization. Everything — businesses, queues, and customers —
+              lives inside it.
+            </p>
+            <CreateWorkspaceForm />
+          </div>
+        </main>
+      </div>
+    );
+  }
 
     const [businessCount, activeQueueCount, waitingCount, servedCount, recentEntries] =
       await Promise.all([
@@ -135,20 +157,4 @@ export default async function DashboardPage() {
         </main>
       </div>
     );
-  } catch (err) {
-    if (err instanceof AuthError && err.code === "UNAUTHENTICATED") {
-      redirect("/sign-in");
-    }
-
-    return (
-      <div className="min-h-screen bg-slate-50">
-        <DashboardHeader title="Smart Queue" />
-        <main className="flex min-h-[calc(100vh-73px)] items-center justify-center px-6">
-          <p className="max-w-md text-center text-sm text-slate-600">
-            We couldn&apos;t load your dashboard right now. Please refresh the page and try again.
-          </p>
-        </main>
-      </div>
-    );
-  }
 }
